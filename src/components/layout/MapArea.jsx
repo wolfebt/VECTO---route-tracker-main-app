@@ -40,8 +40,12 @@ function DirectionsComponent() {
   // Initialize Directions Service and Renderer
   useEffect(() => {
     if (!routesLibrary || !map) return;
-    setDirectionsService(new routesLibrary.DirectionsService());
-    setDirectionsRenderer(new routesLibrary.DirectionsRenderer({ map }));
+    const ds = new routesLibrary.DirectionsService();
+    const dr = new routesLibrary.DirectionsRenderer({ map });
+    setDirectionsService(ds);
+    setDirectionsRenderer(dr);
+    
+    return () => dr.setMap(null);
   }, [routesLibrary, map]);
 
   // Update Route when selected job changes
@@ -49,15 +53,17 @@ function DirectionsComponent() {
     if (!directionsService || !directionsRenderer) return;
 
     if (!selectedJobId) {
-      directionsRenderer.setDirections({ routes: [] });
+      directionsRenderer.setMap(null);
       return;
     }
 
     const job = jobs.find(j => j.id === selectedJobId);
     if (!job) {
-      directionsRenderer.setDirections({ routes: [] });
+      directionsRenderer.setMap(null);
       return;
     }
+
+    directionsRenderer.setMap(map);
 
     const dests = job.destinations || (job.destination ? [job.destination] : []);
     if (dests.length === 0) return;
@@ -84,7 +90,7 @@ function DirectionsComponent() {
       destination: finalDest,
       waypoints: waypoints,
       optimizeWaypoints: job.optimizeRoute !== false,
-      travelMode: google.maps.TravelMode.DRIVING,
+      travelMode: 'DRIVING',
       drivingOptions: {
         departureTime: new Date(), // Request traffic-aware ETA
       }

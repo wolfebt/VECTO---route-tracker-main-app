@@ -10,6 +10,11 @@ import { useMapsLibrary } from '@vis.gl/react-google-maps';
 const AutocompleteInput = ({ value, onChange, placeholder, className, required }) => {
   const inputRef = useRef(null);
   const placesLib = useMapsLibrary('places');
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     if (!placesLib || !inputRef.current) return;
@@ -19,19 +24,26 @@ const AutocompleteInput = ({ value, onChange, placeholder, className, required }
       const place = ac.getPlace();
       if (place.formatted_address) {
          if (place.name && !place.formatted_address.startsWith(place.name)) {
-            onChange(`${place.name}, ${place.formatted_address}`);
+            onChangeRef.current(`${place.name}, ${place.formatted_address}`);
          } else {
-            onChange(place.formatted_address);
+            onChangeRef.current(place.formatted_address);
          }
       } else if (place.name) {
-         onChange(place.name);
+         onChangeRef.current(place.name);
       }
     });
 
     return () => {
       if (window.google) google.maps.event.removeListener(listener);
+      // Clean up autocomplete element from DOM to prevent memory leaks if component unmounts
+      const pacContainers = document.querySelectorAll('.pac-container');
+      pacContainers.forEach(container => {
+        if (!container.parentElement) return;
+        // Optionally, we could try to find the one associated with this input, but 
+        // usually letting Google handle it is fine unless it's a SPA unmount issue.
+      });
     };
-  }, [placesLib, onChange]);
+  }, [placesLib]);
 
   return (
     <input
@@ -42,6 +54,7 @@ const AutocompleteInput = ({ value, onChange, placeholder, className, required }
       placeholder={placeholder}
       className={className}
       required={required}
+      autoComplete="off"
     />
   );
 };

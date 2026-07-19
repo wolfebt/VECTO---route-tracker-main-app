@@ -37,6 +37,8 @@ function DirectionsComponent() {
   const jobs = useJobs();
   const colors = useAppStore(state => state.colors);
 
+  const lastRouteSignature = React.useRef(null);
+
   // Initialize Directions Service and Renderer
   useEffect(() => {
     if (!routesLibrary || !map) return;
@@ -54,19 +56,22 @@ function DirectionsComponent() {
 
     if (!selectedJobId) {
       directionsRenderer.setMap(null);
+      lastRouteSignature.current = null;
       return;
     }
 
     const job = jobs.find(j => j.id === selectedJobId);
     if (!job) {
       directionsRenderer.setMap(null);
+      lastRouteSignature.current = null;
       return;
     }
 
-    directionsRenderer.setMap(map);
-
     const dests = job.destinations || (job.destination ? [job.destination] : []);
-    if (dests.length === 0) return;
+    if (dests.length === 0) {
+      directionsRenderer.setMap(null);
+      return;
+    }
 
     let waypoints = [];
     let finalDest = dests[0];
@@ -75,6 +80,15 @@ function DirectionsComponent() {
          waypoints = dests.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
          finalDest = dests[dests.length - 1];
     }
+
+    const currentSignature = JSON.stringify({ origin: job.origin, dests, optimize: job.optimizeRoute });
+    if (lastRouteSignature.current === currentSignature) {
+        // We already routed this exact job configuration
+        directionsRenderer.setMap(map);
+        return;
+    }
+
+    directionsRenderer.setMap(map);
 
     // Set line color
     let hash = 0;
@@ -89,13 +103,14 @@ function DirectionsComponent() {
       origin: job.origin,
       destination: finalDest,
       waypoints: waypoints,
-      optimizeWaypoints: job.optimizeRoute !== false,
+      optimizeWaypoints: waypoints.length > 0 ? job.optimizeRoute !== false : false,
       travelMode: 'DRIVING',
       drivingOptions: {
         departureTime: new Date(), // Request traffic-aware ETA
       }
     }).then(response => {
       directionsRenderer.setDirections(response);
+      lastRouteSignature.current = currentSignature; // Update signature on success
       
       if (response.routes && response.routes.length > 0) {
           const route = response.routes[0];
@@ -115,7 +130,7 @@ function DirectionsComponent() {
           // Get final destination coordinates for weather API
           const lastLeg = route.legs[route.legs.length - 1];
           const endLoc = lastLeg ? lastLeg.end_location : null;
-          const destCoords = endLoc ? { lat: endLoc.lat(), lng: endLoc.lng() } : null;
+          const destCoords = endLoc ? (typeof endLoc.lat === 'function' ? { lat: endLoc.lat(), lng: endLoc.lng() } : { lat: endLoc.lat, lng: endLoc.lng }) : null;
 
           // Extract plain-text step instructions for voice directions
           const allSteps = route.legs.flatMap(leg => leg.steps);
@@ -134,12 +149,14 @@ function DirectionsComponent() {
       }
     }).catch(e => {
       console.error("Directions request failed", e);
+      // Don't toast if it's just zero results on an ongoing basis to avoid spam, but we do want to notify
       import('../../store/useToastStore').then(({ useToastStore }) => {
-        useToastStore.getState().addToast("Could not find a route for this job. Please check the addresses.", "error");
+        useToastStore.getState().addToast(`Could not find a route: ${e.message || "Check addresses"}`, "error");
       });
+      directionsRenderer.setMap(null); // Hide failed route
     });
 
-  }, [selectedJobId, jobs, directionsService, directionsRenderer, colors, setRouteInfo]);
+  }, [selectedJobId, jobs, directionsService, directionsRenderer, colors, setRouteInfo, map]);
 
   return null;
 }

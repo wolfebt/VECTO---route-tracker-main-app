@@ -78,14 +78,18 @@ export default function Sidebar() {
   return (
     <div className="flex flex-col h-full bg-slate-900/50 backdrop-blur-md">
       <div className="mb-6 p-4">
-        <h2 className="text-[10px] font-bold text-primary-400 uppercase tracking-widest mb-3">Company Workspace</h2>
+        <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-3">Company Workspace</h2>
         <div 
           onClick={() => openModal('companySettings')}
-          className="flex justify-between items-center bg-white/5 border border-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/10 transition-all duration-300 group shadow-sm"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openModal('companySettings'); }}
+          aria-label="Company Settings"
+          className="flex justify-between items-center bg-white/5 border border-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/10 transition-all duration-300 group shadow-sm focus-visible:ring-2 focus-visible:ring-primary-500"
           title="Company Settings"
         >
           <span className="font-semibold text-gray-200 group-hover:text-white transition-colors">{companyName}</span>
-          <span className="text-[10px] uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-2 py-1 rounded">Settings</span>
+          <span className="text-xs uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-2 py-1 rounded">Settings</span>
         </div>
       </div>
       
@@ -111,7 +115,7 @@ export default function Sidebar() {
 
       {isDispatchView && (
         <div className="mb-6 px-4">
-          <h2 className="text-[10px] font-bold text-primary-400 uppercase tracking-widest mb-3">Management</h2>
+          <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-3">Management</h2>
           <button onClick={() => openModal('createJob')} className="w-full btn-primary flex items-center justify-center space-x-2">
             <span className="text-xl leading-none">+</span>
             <span>Create New Job</span>
@@ -152,13 +156,13 @@ export default function Sidebar() {
       {/* Lists Container */}
       <div className="flex-1 overflow-y-auto min-h-0 space-y-8 px-4 pb-4">
         <div>
-          <h2 className="text-[10px] font-bold text-primary-400 uppercase tracking-widest mb-3 sticky top-0 bg-slate-900/90 backdrop-blur-sm py-2 z-10 border-b border-white/5">Jobs</h2>
+          <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-3 sticky top-0 bg-slate-900/90 backdrop-blur-sm py-2 z-10 border-b border-white/5">Jobs</h2>
           <JobsList />
         </div>
         
         {isDispatchView && (
           <div>
-            <h2 className="text-[10px] font-bold text-accent-400 uppercase tracking-widest mb-3 sticky top-0 bg-slate-900/90 backdrop-blur-sm py-2 z-10 border-b border-white/5">Active Drivers</h2>
+            <h2 className="text-xs font-bold text-accent-400 uppercase tracking-widest mb-3 sticky top-0 bg-slate-900/90 backdrop-blur-sm py-2 z-10 border-b border-white/5">Active Drivers</h2>
             <DriversList />
           </div>
         )}

@@ -163,7 +163,7 @@ export default function CreateJobModal() {
       >
         <div className="p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
           <h2 className="text-xl font-bold text-white">{isEditing ? 'Edit Job' : 'Create New Job'}</h2>
-          <button onClick={handleClose} className="text-gray-400 hover:text-white">&times;</button>
+          <button onClick={handleClose} aria-label="Close" className="text-gray-400 hover:text-white p-2 rounded focus-visible:ring-2 focus-visible:ring-primary-500">&times;</button>
         </div>
         
         <div className="p-4 overflow-y-auto flex-1">
@@ -171,17 +171,17 @@ export default function CreateJobModal() {
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Job Name *</label>
+                <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Job Name *</label>
                 <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600" required />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Date</label>
+                <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Date</label>
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600" />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Origin Address *</label>
+              <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Origin Address *</label>
               <AutocompleteInput 
                  value={origin} 
                  onChange={setOrigin} 
@@ -193,8 +193,8 @@ export default function CreateJobModal() {
 
             <div>
               <div className="flex justify-between items-end mb-1">
-                 <label className="block text-xs font-bold text-gray-400 uppercase">Destinations *</label>
-                 <button type="button" onClick={() => setDests([...dests, ''])} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded">+ Add Stop</button>
+                 <label className="block text-sm font-bold text-gray-300 uppercase">Destinations *</label>
+                 <button type="button" onClick={() => setDests([...dests, ''])} className="text-sm bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded focus-visible:ring-2 focus-visible:ring-primary-500 transition-colors">+ Add Stop</button>
               </div>
               <div className="space-y-2">
                  {dests.map((dest, i) => (
@@ -211,7 +211,7 @@ export default function CreateJobModal() {
                          required 
                       />
                       {dests.length > 1 && (
-                         <button type="button" onClick={() => setDests(dests.filter((_, idx) => idx !== i))} className="px-2 text-red-500 hover:text-red-400 font-bold bg-gray-700 rounded border border-gray-600">&times;</button>
+                         <button type="button" aria-label="Remove Stop" onClick={() => setDests(dests.filter((_, idx) => idx !== i))} className="px-3 py-2 text-red-500 hover:text-red-400 font-bold bg-gray-700 rounded border border-gray-600 focus-visible:ring-2 focus-visible:ring-red-500 transition-colors">&times;</button>
                       )}
                     </div>
                  ))}
@@ -224,17 +224,17 @@ export default function CreateJobModal() {
 
             <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
                <div>
-                 <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Contact Name</label>
+                 <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Contact Name</label>
                  <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600" />
                </div>
                <div>
-                 <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Contact Number</label>
+                 <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Contact Number</label>
                  <input type="tel" value={contactNumber} onChange={e => setContactNumber(e.target.value)} className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600" />
                </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Assign Team</label>
+              <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Assign Team</label>
               <div className="w-full bg-gray-700 rounded p-2 border border-gray-600 max-h-32 overflow-y-auto space-y-1">
                  {activeDrivers.length === 0 && <span className="text-gray-400 text-sm">No active drivers available.</span>}
                  {activeDrivers.map(d => (
@@ -255,13 +255,13 @@ export default function CreateJobModal() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Internal Notes</label>
+              <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Internal Notes</label>
               <textarea value={note} onChange={e => setNote(e.target.value)} rows="3" className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"></textarea>
             </div>
 
             {isEditing && (
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Job Status</label>
+                <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Job Status</label>
                 <select value={jobStatus} onChange={e => setJobStatus(e.target.value)} className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600">
                    <option value="unassigned">Unassigned</option>
                    <option value="in-progress">In Progress</option>

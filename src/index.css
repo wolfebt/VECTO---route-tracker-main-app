@@ -28,6 +28,12 @@ body {
   background-attachment: fixed;
 }
 
+/* Global focus accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
 /* Glassmorphism & Depth Utilities */
 .glass-panel {
   @apply bg-slate-900/60 backdrop-blur-md border border-white/5 shadow-xl;

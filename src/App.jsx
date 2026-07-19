@@ -59,7 +59,7 @@ function App() {
                <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Vecto</h1>
                <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
              </div>
-             <button onClick={() => openModal('settings')} className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
+             <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
                <Settings size={20} />
              </button>
            </div>

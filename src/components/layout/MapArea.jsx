@@ -163,14 +163,14 @@ function DriverMarkers() {
   }, [map]);
 
   useEffect(() => {
-     if (!companyId) return;
+     if (!companyId || !currentUser) return;
      const unsub = onSnapshot(doc(db, 'companies', companyId), (snap) => {
          if (snap.exists()) {
              setShowNameplates(snap.data().showNameplates !== false);
          }
      });
      return () => unsub();
-  }, [companyId]);
+  }, [companyId, currentUser]);
 
   const fiveMinAgo = Date.now() - (5 * 60 * 1000);
   const active = drivers.filter(d => {
@@ -220,6 +220,7 @@ function DriverMarkers() {
                 onClick={() => setSelectedDriverId(driver.id)}
                 className="cursor-pointer"
                 zIndex={isSelected ? 1000 : 1}
+                title={`${driver.name || 'Unnamed'} - ${statusText}`}
              >
                 <div className="flex flex-col items-center hover:scale-110 transition-transform origin-bottom relative">
                     <Pin background={pinColor} borderColor={borderColor} glyphColor={glyphColor} scale={1.2} />
@@ -314,7 +315,6 @@ export default function MapArea() {
       <Map
         defaultCenter={{ lat: 39.8283, lng: -98.5795 }}
         defaultZoom={4}
-        styles={mapStyles}
         gestureHandling={'greedy'}
         disableDefaultUI={false}
         mapId="vecto-main-map"
@@ -328,6 +328,7 @@ export default function MapArea() {
       {/* My Location Button */}
       <button 
         type="button"
+        aria-label="My Location"
         onClick={() => {
           if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition((pos) => {

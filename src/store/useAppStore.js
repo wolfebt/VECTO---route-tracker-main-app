@@ -47,6 +47,7 @@ export const useAppStore = create((set) => ({
     companySettings: false,
     createJob: false,
     confirm: null, // Holds { message, onConfirm } or null
+    stressTest: false, // Dashboard modal
   },
   openModal: (modalName, data = true) => set((state) => ({ 
     modals: { ...state.modals, [modalName]: data } 
@@ -54,6 +55,14 @@ export const useAppStore = create((set) => ({
   closeModal: (modalName) => set((state) => ({ 
     modals: { ...state.modals, [modalName]: false } 
   })),
+
+  // Stress Test Mode
+  isMockMode: false,
+  setIsMockMode: (isMockMode) => set({ isMockMode }),
+  mockDrivers: [],
+  setMockDrivers: (mockDrivers) => set({ mockDrivers }),
+  mockJobs: [],
+  setMockJobs: (mockJobs) => set({ mockJobs }),
 
   // Constants
   colors: ['#FF5733', '#33FF57', '#3357FF', '#FF33A1', '#A133FF', '#33FFA1', '#FFC300', '#C70039'],

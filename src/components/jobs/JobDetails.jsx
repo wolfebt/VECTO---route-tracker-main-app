@@ -199,7 +199,7 @@ export default function JobDetails({ onClose }) {
                )}
            </div>
         </div>
-        <button onClick={() => setSelectedJobId(null)} className="text-gray-400 hover:text-white">&times;</button>
+        <button onClick={() => setSelectedJobId(null)} aria-label="Close Job Details" className="text-gray-400 hover:text-white p-2 rounded focus-visible:ring-2 focus-visible:ring-primary-500">&times;</button>
       </div>
 
       {/* Details */}
@@ -246,10 +246,10 @@ export default function JobDetails({ onClose }) {
                           }
                       }
                       return (
-                          <div key={d.id} className="flex items-center space-x-1.5 bg-gray-800 px-2 py-1 rounded border border-gray-700">
+                          <div key={d.id} className="flex items-center space-x-2 bg-gray-800 px-2 py-1 rounded border border-gray-700">
                              <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} style={dotStyle}></span>
                              <span className="text-xs text-gray-200 font-medium truncate max-w-[80px]">{d.name}</span>
-                             <span className="text-[10px] text-gray-400">({statusText})</span>
+                             <span className="text-xs text-gray-400">({statusText})</span>
                           </div>
                       );
                    })}
@@ -262,7 +262,7 @@ export default function JobDetails({ onClose }) {
         {/* Manage Team (Dispatcher) */}
         {isDispatchView && canAssign && (
             <div className="mt-2 bg-gray-800 p-2 rounded">
-               <strong className="text-gray-300 text-[10px] uppercase block mb-1">Manage Team</strong>
+               <strong className="text-gray-300 text-xs uppercase block mb-1">Manage Team</strong>
                <div className="max-h-24 overflow-y-auto space-y-1">
                  {activeDrivers.map(d => {
                     const isDriverAssigned = (job.assignedDrivers || []).some(ad => ad.id === d.id);
@@ -283,22 +283,22 @@ export default function JobDetails({ onClose }) {
         )}
         
         {/* Actions */}
-        <div className="grid grid-cols-2 gap-2 mt-4">
-           {canAssign && !isAssigned && <button onClick={() => updateStatus('in-progress', true)} className="bg-blue-600 hover:bg-blue-700 text-white rounded py-1 text-xs font-semibold shadow">Assign to Me</button>}
-           {canAssign && isAssigned && <button onClick={() => updateStatus('unassigned', false, true)} className="bg-red-600 hover:bg-red-700 text-white rounded py-1 text-xs font-semibold shadow">Unassign Me</button>}
-           {isAssigned && job.status !== 'pending-completion' && <button onClick={() => updateStatus('pending-completion')} className="bg-green-600 hover:bg-green-700 text-white rounded py-1 text-xs font-semibold shadow">Request Completion</button>}
+        <div className="grid grid-cols-2 gap-3 mt-4">
+           {canAssign && !isAssigned && <button onClick={() => updateStatus('in-progress', true)} className="bg-blue-600 hover:bg-blue-700 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Assign to Me</button>}
+           {canAssign && isAssigned && <button onClick={() => updateStatus('unassigned', false, true)} className="bg-red-600 hover:bg-red-700 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Unassign Me</button>}
+           {isAssigned && job.status !== 'pending-completion' && <button onClick={() => updateStatus('pending-completion')} className="bg-green-600 hover:bg-green-700 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Request Completion</button>}
            
            {isDispatchView && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
              <>
-               <button onClick={() => updateStatus('completed')} className="bg-green-700 hover:bg-green-600 text-white rounded py-1 text-xs font-semibold shadow">Complete Job</button>
-               <button onClick={() => updateStatus('cancelled')} className="bg-orange-700 hover:bg-orange-600 text-white rounded py-1 text-xs font-semibold shadow">Cancel Job</button>
+               <button onClick={() => updateStatus('completed')} className="bg-green-700 hover:bg-green-600 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Complete Job</button>
+               <button onClick={() => updateStatus('cancelled')} className="bg-orange-700 hover:bg-orange-600 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Cancel Job</button>
              </>
            )}
-           {isDispatchView && job.status !== 'archived' && <button onClick={() => updateStatus('archived')} className="bg-gray-700 hover:bg-gray-600 border border-gray-500 text-white rounded py-1 text-xs font-semibold shadow">Archive</button>}
-           {isDispatchView && job.status === 'archived' && <button onClick={() => updateStatus(job.previousStatus || 'completed')} className="bg-gray-600 hover:bg-gray-500 border border-gray-400 text-white rounded py-1 text-xs font-semibold shadow">Unarchive</button>}
-           {isDispatchView && <button onClick={() => openModal('createJob', { editMode: true, job })} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded py-1 text-xs font-semibold shadow col-span-2 mt-2">Edit Job</button>}
-           <button onClick={() => openModal('invite')} className="bg-teal-600 hover:bg-teal-700 text-white rounded py-1 text-xs font-semibold shadow col-span-2">Invite Others to Job</button>
-           {isDispatchView && <button onClick={handleDelete} className="bg-red-900 hover:bg-red-800 text-red-200 rounded py-1 text-xs font-semibold shadow col-span-2">Delete Job</button>}
+           {isDispatchView && job.status !== 'archived' && <button onClick={() => updateStatus('archived')} className="bg-gray-700 hover:bg-gray-600 border border-gray-500 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Archive</button>}
+           {isDispatchView && job.status === 'archived' && <button onClick={() => updateStatus(job.previousStatus || 'completed')} className="bg-gray-600 hover:bg-gray-500 border border-gray-400 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Unarchive</button>}
+           {isDispatchView && <button onClick={() => openModal('createJob', { editMode: true, job })} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 mt-2 focus-visible:ring-2 focus-visible:ring-white">Edit Job</button>}
+           <button onClick={() => openModal('invite')} className="bg-teal-600 hover:bg-teal-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 focus-visible:ring-2 focus-visible:ring-white">Invite Others to Job</button>
+           {isDispatchView && <button onClick={handleDelete} className="bg-red-900 hover:bg-red-800 text-red-200 rounded py-2 text-xs font-semibold shadow col-span-2 focus-visible:ring-2 focus-visible:ring-white">Delete Job</button>}
         </div>
       </div>
 
@@ -311,7 +311,7 @@ export default function JobDetails({ onClose }) {
             const isMe = msg.senderId === currentUser.id;
             return (
               <div key={msg.id} className={`max-w-[85%] ${isMe ? 'ml-auto' : 'mr-auto'}`}>
-                  <div className={`text-[10px] text-gray-500 mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>{isMe ? 'You' : msg.senderName}</div>
+                  <div className={`text-xs text-gray-500 mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>{isMe ? 'You' : msg.senderName}</div>
                   <div className={`p-2 rounded-lg text-sm shadow ${isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-700 text-gray-200 rounded-bl-none'}`}>
                       {msg.text && <div>{msg.text}</div>}
                       {msg.attachmentUrl && <img src={msg.attachmentUrl} className="w-full rounded mt-1 max-h-32 object-cover cursor-pointer hover:opacity-90" onClick={() => window.open(msg.attachmentUrl)} alt="attachment" />}
@@ -333,9 +333,12 @@ export default function JobDetails({ onClose }) {
                  placeholder="Type a message..." 
                  className="flex-1 bg-gray-700 text-white rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                />
-               <label className="cursor-pointer p-2 bg-gray-700 text-gray-300 hover:text-white rounded-full">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                  <input type="file" className="hidden" onChange={e => setChatFile(e.target.files[0])} accept="image/*" />
+               <label 
+                  className="cursor-pointer p-2 bg-gray-700 text-gray-300 hover:text-white rounded-full focus-within:ring-2 focus-within:ring-blue-500" 
+                  aria-label="Attach File"
+               >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                  <input type="file" className="sr-only" onChange={e => setChatFile(e.target.files[0])} accept="image/*" />
                </label>
             </div>
             {chatFile && <div className="text-xs text-blue-400 px-2 truncate">File: {chatFile.name} <button type="button" onClick={() => setChatFile(null)} className="text-red-400 ml-2">&times;</button></div>}

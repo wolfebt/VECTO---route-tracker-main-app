@@ -175,10 +175,11 @@ export function useCompany() {
 
 export function useJobs() {
   const companyId = useAppStore(state => state.companyId);
+  const currentUser = useAppStore(state => state.currentUser);
   const [jobs, setJobs] = useState([]);
   
   useEffect(() => {
-    if (!companyId) {
+    if (!companyId || !currentUser) {
       setJobs([]);
       return;
     }
@@ -193,17 +194,18 @@ export function useJobs() {
     });
     
     return unsub;
-  }, [companyId]);
+  }, [companyId, currentUser]);
   
   return jobs;
 }
 
 export function useActiveDrivers() {
   const companyId = useAppStore(state => state.companyId);
+  const currentUser = useAppStore(state => state.currentUser);
   const [drivers, setDrivers] = useState([]);
   
   useEffect(() => {
-    if (!companyId) {
+    if (!companyId || !currentUser) {
       setDrivers([]);
       return;
     }
@@ -218,7 +220,7 @@ export function useActiveDrivers() {
     });
     
     return unsub;
-  }, [companyId]);
+  }, [companyId, currentUser]);
   
   return drivers;
 }

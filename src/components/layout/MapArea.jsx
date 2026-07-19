@@ -134,6 +134,9 @@ function DirectionsComponent() {
       }
     }).catch(e => {
       console.error("Directions request failed", e);
+      import('../../store/useToastStore').then(({ useToastStore }) => {
+        useToastStore.getState().addToast("Could not find a route for this job. Please check the addresses.", "error");
+      });
     });
 
   }, [selectedJobId, jobs, directionsService, directionsRenderer, colors, setRouteInfo]);

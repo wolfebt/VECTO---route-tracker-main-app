@@ -101,6 +101,8 @@ export function useCompany() {
         // Only update store if dispatch view changed to avoid infinite loops
         useAppStore.setState(prev => prev.isDispatchView !== isDispatch ? { isDispatchView: isDispatch } : {});
       }
+    }, (error) => {
+      console.error("Error listening to company members:", error);
     });
     
     return unsub;
@@ -186,6 +188,8 @@ export function useJobs() {
       const allJobs = [];
       snap.forEach(doc => allJobs.push({ id: doc.id, ...doc.data() }));
       setJobs(allJobs);
+    }, (error) => {
+      console.error("Error listening to jobs:", error);
     });
     
     return unsub;
@@ -209,6 +213,8 @@ export function useActiveDrivers() {
       const allDrivers = [];
       snap.forEach(doc => allDrivers.push({ id: doc.id, ...doc.data() }));
       setDrivers(allDrivers);
+    }, (error) => {
+      console.error("Error listening to active drivers:", error);
     });
     
     return unsub;

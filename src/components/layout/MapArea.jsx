@@ -81,6 +81,16 @@ function DirectionsComponent() {
          finalDest = dests[dests.length - 1];
     }
 
+    // Set line color
+    let hash = 0;
+    for (let i = 0; i < job.id.length; i++) hash = job.id.charCodeAt(i) + ((hash << 5) - hash);
+    const defaultColor = colors[Math.abs(hash) % colors.length];
+    const color = job.routeColor || defaultColor;
+
+    directionsRenderer.setOptions({
+        polylineOptions: { strokeColor: color, strokeOpacity: 0.8, strokeWeight: 5 }
+    });
+
     const currentSignature = JSON.stringify({ origin: job.origin, dests, optimize: job.optimizeRoute });
     if (lastRouteSignature.current === currentSignature) {
         // We already routed this exact job configuration
@@ -89,15 +99,6 @@ function DirectionsComponent() {
     }
 
     directionsRenderer.setMap(map);
-
-    // Set line color
-    let hash = 0;
-    for (let i = 0; i < job.id.length; i++) hash = job.id.charCodeAt(i) + ((hash << 5) - hash);
-    const color = colors[Math.abs(hash) % colors.length];
-
-    directionsRenderer.setOptions({
-        polylineOptions: { strokeColor: color, strokeOpacity: 0.8, strokeWeight: 5 }
-    });
 
     directionsService.route({
       origin: job.origin,

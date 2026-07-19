@@ -128,6 +128,12 @@ export default function JobDetails({ onClose }) {
     }
   };
 
+  const handleUpdateColor = async (color) => {
+    await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), {
+      routeColor: color
+    });
+  };
+
   const handleSendChat = async (e) => {
     e.preventDefault();
     if (!chatInput.trim() && !chatFile) return;
@@ -204,7 +210,20 @@ export default function JobDetails({ onClose }) {
 
       {/* Details */}
       <div className="flex-1 p-4 border-b border-gray-800 overflow-y-auto text-sm space-y-2">
-        <p className="text-gray-400"><strong className="text-gray-200">From:</strong> {job.origin}</p>
+        <div className="flex justify-between items-start">
+            <p className="text-gray-400"><strong className="text-gray-200">From:</strong> {job.origin}</p>
+            {isDispatchView && (
+                <div className="flex items-center space-x-2 shrink-0 ml-2" title="Route Path Color">
+                    <label className="text-xs text-gray-400">Color:</label>
+                    <input 
+                        type="color" 
+                        defaultValue={job.routeColor || '#3b82f6'} 
+                        onBlur={(e) => handleUpdateColor(e.target.value)}
+                        className="w-6 h-6 cursor-pointer bg-transparent border-0 p-0 rounded-full"
+                    />
+                </div>
+            )}
+        </div>
         <div className="text-gray-400"><strong className="text-gray-200">Destinations:</strong>
             <ul className="list-decimal ml-5 mt-1 text-xs">
                 {(job.destinations || [job.destination]).map((d, i) => <li key={i}>{d}</li>)}
@@ -303,7 +322,7 @@ export default function JobDetails({ onClose }) {
       </div>
 
       {/* Chat */}
-      <div className="h-[30%] min-h-[150px] shrink-0 overflow-y-auto p-4 space-y-2 bg-gray-850">
+      <div className="max-h-[33%] shrink-0 overflow-y-auto p-4 space-y-2 bg-gray-850">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 text-xs mt-4">No messages yet.</div>
         ) : (

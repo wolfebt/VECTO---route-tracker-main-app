@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Vecto</string>
+    <string name="title_activity_main">Vecto</string>
+    <string name="package_name">vecto.app</string>
+    <string name="custom_url_scheme">vecto.app</string>
+</resources>

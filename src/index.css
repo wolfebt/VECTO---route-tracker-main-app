@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  display: block;
+  min-width: 320px;
+  min-height: 100vh;
+  @apply bg-gray-900 text-gray-200 font-sans;
+}
+
+/* Custom UI enhancements */
+.soft-teal-glow {
+  box-shadow: 0 0 8px 1px rgba(20, 184, 166, 0.5); /* teal-500 */
+}
+
+.pulse-border {
+  animation: borderPulse 2s infinite;
+}
+
+@keyframes borderPulse {
+  0% { border-color: rgba(59, 130, 246, 0.5); }
+  50% { border-color: rgba(59, 130, 246, 1); }
+  100% { border-color: rgba(59, 130, 246, 0.5); }
+}
+
+.selected-job-card {
+  @apply border-blue-500 bg-[#2d3748];
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}

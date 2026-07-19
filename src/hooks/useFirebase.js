@@ -7,6 +7,8 @@ import { useAppStore } from '../store/useAppStore';
 export function useAuth() {
   const setCurrentUser = useAppStore(state => state.setCurrentUser);
   const setMapsApiKey = useAppStore(state => state.setMapsApiKey);
+  const setFirebaseApiKey = useAppStore(state => state.setFirebaseApiKey);
+  const setGeminiApiKey = useAppStore(state => state.setGeminiApiKey);
   
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -39,6 +41,26 @@ export function useAuth() {
               await updateDoc(userDocRef, { 'preferences.mapsApiKey': localKey });
             }
           }
+          
+          if (data.preferences.firebaseApiKey) {
+            setFirebaseApiKey(data.preferences.firebaseApiKey);
+          } else {
+            const localFirebaseKey = localStorage.getItem('firebaseApiKey');
+            if (localFirebaseKey) {
+              setFirebaseApiKey(localFirebaseKey);
+              await updateDoc(userDocRef, { 'preferences.firebaseApiKey': localFirebaseKey });
+            }
+          }
+          
+          if (data.preferences.geminiApiKey) {
+            setGeminiApiKey(data.preferences.geminiApiKey);
+          } else {
+            const localGeminiKey = localStorage.getItem('geminiApiKey');
+            if (localGeminiKey) {
+              setGeminiApiKey(localGeminiKey);
+              await updateDoc(userDocRef, { 'preferences.geminiApiKey': localGeminiKey });
+            }
+          }
         }
         setCurrentUser(userData);
       } else {
@@ -46,7 +68,7 @@ export function useAuth() {
       }
     });
     return unsub;
-  }, [setCurrentUser, setMapsApiKey]);
+  }, [setCurrentUser, setMapsApiKey, setFirebaseApiKey, setGeminiApiKey]);
 
   const login = () => signInWithPopup(auth, new GoogleAuthProvider());
   const logout = () => signOut(auth);

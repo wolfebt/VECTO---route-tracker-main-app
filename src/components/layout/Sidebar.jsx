@@ -3,8 +3,8 @@ import { useAppStore } from '../../store/useAppStore';
 import JobsList from '../jobs/JobsList';
 import DriversList from '../jobs/DriversList';
 import { useLocationSharing } from '../../hooks/useLocationSharing';
-import { useVoiceCommands } from '../../hooks/useVoiceCommands';
-import { MapPin, Mic, MicOff } from 'lucide-react';
+import { useToastStore } from '../../store/useToastStore';
+import { MapPin, Cloud } from 'lucide-react';
 
 export default function Sidebar() {
   const isDispatchView = useAppStore(state => state.isDispatchView);
@@ -12,88 +12,153 @@ export default function Sidebar() {
   const setActiveJobTab = useAppStore(state => state.setActiveJobTab);
   const companyName = useAppStore(state => state.companyName);
   const openModal = useAppStore(state => state.openModal);
+  const addToast = useToastStore(state => state.addToast);
   
   const { isSharingLocation, toggleLocationSharing } = useLocationSharing();
-  const { isListening, toggleListening, supported } = useVoiceCommands();
+  const [isCheckingWeather, setIsCheckingWeather] = React.useState(false);
+
+  const handleCheckWeather = () => {
+    if (!navigator.geolocation) {
+      addToast("Geolocation is not supported by your browser.", "error");
+      return;
+    }
+    setIsCheckingWeather(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const weatherPromise = fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph`)
+          .then(res => res.json());
+          
+        const alertsPromise = Promise.race([
+          fetch(`https://api.weather.gov/alerts/active?point=${latitude},${longitude}`).then(res => res.ok ? res.json() : { features: [] }),
+          new Promise(resolve => setTimeout(() => resolve({ features: [] }), 3000))
+        ]).catch(() => ({ features: [] }));
+
+        Promise.all([weatherPromise, alertsPromise])
+          .then(([weatherData, alertsData]) => {
+            if (weatherData?.current_weather) {
+              const code = weatherData.current_weather.weathercode;
+              let desc = "Clear";
+              if (code >= 1 && code <= 3) desc = "Partly Cloudy";
+              else if (code >= 51 && code <= 67) desc = "Rain";
+              else if (code >= 71 && code <= 77) desc = "Snow";
+              else if (code >= 95) desc = "Thunderstorm";
+              
+              let toastMsg = `Current Weather: ${weatherData.current_weather.temperature}°F, ${desc}`;
+              let toastType = "info";
+              
+              // Process alerts
+              const alerts = alertsData?.features || [];
+              if (alerts.length > 0) {
+                 const alertTitles = alerts.map(a => a.properties.event).join(", ");
+                 toastMsg += ` | ⚠️ Alerts: ${alertTitles}`;
+                 toastType = "warning";
+              }
+              
+              addToast(toastMsg, toastType);
+            } else {
+              addToast("Could not fetch weather data.", "error");
+            }
+          })
+          .catch(err => {
+            console.error(err);
+            addToast("Failed to fetch weather.", "error");
+          })
+          .finally(() => setIsCheckingWeather(false));
+      },
+      (err) => {
+        console.warn(err);
+        addToast("Could not get your location for weather.", "error");
+        setIsCheckingWeather(false);
+      },
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 5000 }
+    );
+  };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="mb-4">
-        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Company</h2>
+    <div className="flex flex-col h-full bg-slate-900/50 backdrop-blur-md">
+      <div className="mb-6 p-4">
+        <h2 className="text-[10px] font-bold text-primary-400 uppercase tracking-widest mb-3">Company Workspace</h2>
         <div 
           onClick={() => openModal('companySettings')}
-          className="flex justify-between items-center bg-gray-800 p-2 rounded cursor-pointer hover:bg-gray-700 transition-colors"
+          className="flex justify-between items-center bg-white/5 border border-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/10 transition-all duration-300 group shadow-sm"
           title="Company Settings"
         >
-          <span className="font-semibold">{companyName}</span>
-          <span className="text-xs text-gray-400">Settings</span>
+          <span className="font-semibold text-gray-200 group-hover:text-white transition-colors">{companyName}</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-2 py-1 rounded">Settings</span>
         </div>
       </div>
       
       {/* Driver Controls */}
-      <div className="mb-4 space-y-2">
+      <div className="mb-6 px-4 space-y-3">
          <button 
            onClick={toggleLocationSharing} 
-           className={`w-full flex items-center justify-center font-bold py-2 px-4 rounded shadow transition-colors ${isSharingLocation ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+           className={`w-full flex items-center justify-center font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all duration-300 border ${isSharingLocation ? 'bg-accent-600/20 text-accent-400 border-accent-500/30 hover:bg-accent-600/30' : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'}`}
          >
-           <MapPin size={16} className="mr-2" />
+           <MapPin size={16} className={`mr-2 ${isSharingLocation ? 'animate-bounce' : ''}`} />
            {isSharingLocation ? 'Location Sharing ON' : 'Share Location'}
          </button>
-         
-         {supported && (
-           <button 
-             onClick={toggleListening} 
-             className={`w-full flex items-center justify-center font-bold py-2 px-4 rounded shadow transition-colors ${isListening ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-             title="Voice Commands: Say 'Create Job', 'Settings', or 'Close'"
-           >
-             {isListening ? <Mic size={16} className="mr-2" /> : <MicOff size={16} className="mr-2" />}
-             {isListening ? 'Listening...' : 'Voice Assistant'}
-           </button>
-         )}
+
+         <button 
+           onClick={handleCheckWeather} 
+           disabled={isCheckingWeather}
+           className="w-full flex items-center justify-center font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all duration-300 border bg-white/5 text-gray-300 border-white/10 hover:bg-white/10 disabled:opacity-50"
+         >
+           <Cloud size={16} className={`mr-2 ${isCheckingWeather ? 'animate-pulse' : ''}`} />
+           {isCheckingWeather ? 'Checking...' : 'Check Weather'}
+         </button>
       </div>
 
       {isDispatchView && (
-        <div className="mb-4">
-          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Management</h2>
-          <button onClick={() => openModal('createJob')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow mb-2">
-            + Create New Job
+        <div className="mb-6 px-4">
+          <h2 className="text-[10px] font-bold text-primary-400 uppercase tracking-widest mb-3">Management</h2>
+          <button onClick={() => openModal('createJob')} className="w-full btn-primary flex items-center justify-center space-x-2">
+            <span className="text-xl leading-none">+</span>
+            <span>Create New Job</span>
           </button>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-700 mb-4">
+      <div className="flex border-b border-white/10 mb-4 mx-4 relative">
         <button 
-          className={`flex-1 py-2 text-sm text-center border-b-2 transition-colors ${activeJobTab === 'current' ? 'border-blue-500 text-blue-500 font-bold' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
+          className={`flex-1 py-3 text-sm text-center transition-colors duration-300 ${activeJobTab === 'current' ? 'text-primary-400 font-bold' : 'text-gray-500 hover:text-gray-300 font-medium'}`}
           onClick={() => setActiveJobTab('current')}
         >
           Active Jobs
         </button>
         <button 
-          className={`flex-1 py-2 text-sm text-center border-b-2 transition-colors ${activeJobTab === 'archive' ? 'border-blue-500 text-blue-500 font-bold' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
+          className={`flex-1 py-3 text-sm text-center transition-colors duration-300 ${activeJobTab === 'archive' ? 'text-primary-400 font-bold' : 'text-gray-500 hover:text-gray-300 font-medium'}`}
           onClick={() => setActiveJobTab('archive')}
         >
           Archived
         </button>
+        {/* Animated Pill Indicator */}
+        <div 
+          className="absolute bottom-0 left-0 h-0.5 bg-primary-500 transition-transform duration-300 ease-out shadow-[0_0_8px_rgba(14,165,233,0.8)]"
+          style={{ width: '50%', transform: `translateX(${activeJobTab === 'current' ? '0%' : '100%'})` }}
+        ></div>
       </div>
       
       {/* Search */}
-      <input 
-        type="text" 
-        placeholder="Search jobs..." 
-        className="w-full bg-gray-800 text-white rounded-full py-2 px-4 mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      <div className="px-4 mb-4">
+        <input 
+          type="text" 
+          placeholder="Search jobs..." 
+          className="glass-input text-sm py-2 rounded-full px-5"
+        />
+      </div>
 
       {/* Lists Container */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-6">
+      <div className="flex-1 overflow-y-auto min-h-0 space-y-8 px-4 pb-4">
         <div>
-          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2 sticky top-0 bg-gray-900 py-1 z-10">Jobs</h2>
+          <h2 className="text-[10px] font-bold text-primary-400 uppercase tracking-widest mb-3 sticky top-0 bg-slate-900/90 backdrop-blur-sm py-2 z-10 border-b border-white/5">Jobs</h2>
           <JobsList />
         </div>
         
         {isDispatchView && (
           <div>
-            <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2 sticky top-0 bg-gray-900 py-1 z-10">Active Drivers</h2>
+            <h2 className="text-[10px] font-bold text-accent-400 uppercase tracking-widest mb-3 sticky top-0 bg-slate-900/90 backdrop-blur-sm py-2 z-10 border-b border-white/5">Active Drivers</h2>
             <DriversList />
           </div>
         )}

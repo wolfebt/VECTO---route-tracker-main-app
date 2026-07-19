@@ -5,14 +5,15 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 export default function CompanySettingsModal() {
-  const { modals, closeModal, companyId, clearCompany } = useAppStore();
+  const { modals, closeModal, openModal, companyId, clearCompany } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
   
   const [formData, setFormData] = useState({
     address: '',
     contactName: '',
     phone: '',
-    email: ''
+    email: '',
+    showNameplates: true
   });
   const [loading, setLoading] = useState(false);
 
@@ -30,7 +31,8 @@ export default function CompanySettingsModal() {
               address: data.address || '',
               contactName: data.contactName || '',
               phone: data.phone || '',
-              email: data.email || ''
+              email: data.email || '',
+              showNameplates: data.showNameplates ?? true
             };
             setFormData(loadedData);
             setOriginalData(loadedData);
@@ -56,8 +58,8 @@ export default function CompanySettingsModal() {
   };
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const handleSave = async (e) => {
@@ -68,7 +70,8 @@ export default function CompanySettingsModal() {
         address: formData.address,
         contactName: formData.contactName,
         phone: formData.phone,
-        email: formData.email
+        email: formData.email,
+        showNameplates: formData.showNameplates
       });
       addToast("Company settings saved!", "success");
       closeModal('companySettings');
@@ -157,6 +160,20 @@ export default function CompanySettingsModal() {
               />
             </div>
 
+            <div className="flex items-center space-x-3 pt-2">
+              <input 
+                type="checkbox" 
+                id="showNameplates"
+                name="showNameplates"
+                checked={formData.showNameplates}
+                onChange={handleChange}
+                className="w-5 h-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="showNameplates" className="text-sm font-medium text-gray-200 cursor-pointer">
+                Show Driver Nameplates on Map
+              </label>
+            </div>
+
             <div className="pt-4 border-t border-gray-700 space-y-3">
               <button 
                 type="submit" 
@@ -170,6 +187,13 @@ export default function CompanySettingsModal() {
 
           <div className="mt-6 pt-4 border-t border-gray-700 space-y-3">
              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Actions</h3>
+             <button 
+                type="button" 
+                onClick={() => { closeModal('companySettings'); openModal('invite'); }}
+                className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg"
+              >
+                Invite Others
+              </button>
              <button 
                 type="button" 
                 onClick={handleChangeCompany}

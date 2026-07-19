@@ -34,24 +34,25 @@ export default function DriversList() {
       {active.map(driver => {
         let statusText = driver.status || 'Online';
         let statusColor = 'bg-gray-500';
+        let dotStyle = driver.color ? { backgroundColor: driver.color } : {};
         
         const assignedJob = jobs.find(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === driver.id));
         if (assignedJob) {
             statusText = `On Trip: ${assignedJob.jobName}`;
-            statusColor = 'bg-yellow-500';
+            if (!driver.color) statusColor = 'bg-yellow-500';
         } else if (driver.status === 'Available') {
-            statusColor = 'bg-green-500';
+            if (!driver.color) statusColor = 'bg-green-500';
         }
 
         return (
-          <li key={driver.id} className="flex justify-between items-center bg-gray-800 p-2 rounded-md border-l-4 border-green-500">
+          <li key={driver.id} className="flex justify-between items-center bg-gray-800 p-2 rounded-md border-l-4" style={{ borderLeftColor: driver.color || '#22c55e' }}>
              <div className="overflow-hidden">
                 <p className="text-sm font-bold text-gray-200 truncate">{driver.name || 'Unnamed'}</p>
                 {/* <p className="text-xs text-gray-400 truncate">ETA: N/A</p> */}
              </div>
              <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
                 <span className="text-xs font-semibold text-gray-400 max-w-[80px] truncate">{statusText}</span>
-                <span className={`w-3 h-3 rounded-full ${statusColor}`}></span>
+                <span className={`w-3 h-3 rounded-full ${driver.color ? '' : statusColor}`} style={dotStyle}></span>
                 {isDispatchView && (
                     <button 
                        onClick={() => handleRemoveDriver(driver.id)} 

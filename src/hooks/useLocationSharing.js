@@ -43,7 +43,9 @@ export function useLocationSharing() {
               await setDoc(doc(db, `companies/${companyId}/active_drivers`, currentUser.id), {
                 location: new GeoPoint(location.latitude, location.longitude),
                 timestamp: serverTimestamp(),
-                status: 'Available' // We'll refine this later based on job status
+                status: 'Available', // We'll refine this later based on job status
+                name: currentUser.name || 'Unnamed',
+                color: currentUser.color || '#22c55e'
               });
             } catch (err) {
               console.error("Error updating location:", err);
@@ -60,6 +62,25 @@ export function useLocationSharing() {
           setIsSharingLocation(false);
           return;
         }
+        // Fetch immediate location first so pin appears instantly
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            try {
+              await setDoc(doc(db, `companies/${companyId}/active_drivers`, currentUser.id), {
+                location: new GeoPoint(latitude, longitude),
+                timestamp: serverTimestamp(),
+                status: 'Available',
+                name: currentUser.name || 'Unnamed',
+                color: currentUser.color || '#22c55e'
+              });
+            } catch (err) {
+              console.error("Error updating location:", err);
+            }
+          },
+          (err) => console.warn("Quick location fetch failed:", err),
+          { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        );
 
         watchIdRef.current = navigator.geolocation.watchPosition(
           async (position) => {
@@ -68,7 +89,9 @@ export function useLocationSharing() {
               await setDoc(doc(db, `companies/${companyId}/active_drivers`, currentUser.id), {
                 location: new GeoPoint(latitude, longitude),
                 timestamp: serverTimestamp(),
-                status: 'Available'
+                status: 'Available',
+                name: currentUser.name || 'Unnamed',
+                color: currentUser.color || '#22c55e'
               });
             } catch (err) {
               console.error("Error updating location:", err);

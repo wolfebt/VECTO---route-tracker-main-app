@@ -3,7 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
 import { useActiveDrivers } from '../../hooks/useFirebase';
 import { db } from '../../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 
 // Helper component for Autocomplete inputs
@@ -17,8 +17,14 @@ const AutocompleteInput = ({ value, onChange, placeholder, className, required }
     
     const listener = ac.addListener('place_changed', () => {
       const place = ac.getPlace();
-      if (place.formatted_address || place.name) {
-        onChange(place.formatted_address || place.name);
+      if (place.formatted_address) {
+         if (place.name && !place.formatted_address.startsWith(place.name)) {
+            onChange(`${place.name}, ${place.formatted_address}`);
+         } else {
+            onChange(place.formatted_address);
+         }
+      } else if (place.name) {
+         onChange(place.name);
       }
     });
 
@@ -55,6 +61,33 @@ export default function CreateJobModal() {
   const [contactNumber, setContactNumber] = useState('');
   const [optimize, setOptimize] = useState(true);
   const [assignedDriverIds, setAssignedDriverIds] = useState([]);
+  const [jobStatus, setJobStatus] = useState('unassigned');
+
+  const modalData = modals.createJob;
+  const isEditing = typeof modalData === 'object' && modalData.editMode === true;
+  const editingJob = isEditing ? modalData.job : null;
+
+  useEffect(() => {
+     if (modals.createJob) {
+        if (isEditing && editingJob) {
+           setName(editingJob.jobName || '');
+           setOrigin(editingJob.origin || '');
+           setDests(editingJob.destinations || (editingJob.destination ? [editingJob.destination] : ['']));
+           setDate(editingJob.jobDate || '');
+           setNote(editingJob.note || '');
+           setContactName(editingJob.contactName || '');
+           setContactNumber(editingJob.contactNumber || '');
+           setOptimize(editingJob.optimizeRoute !== false);
+           setAssignedDriverIds((editingJob.assignedDrivers || []).map(d => d.id));
+           setJobStatus(editingJob.status || 'unassigned');
+        } else {
+           setName(''); setOrigin(''); setDests(['']); setDate(''); setNote('');
+           setContactName(''); setContactNumber(''); setAssignedDriverIds([]);
+           setOptimize(true);
+           setJobStatus('unassigned');
+        }
+     }
+  }, [modals.createJob, isEditing, editingJob]);
 
   if (!modals.createJob) return null;
 
@@ -73,7 +106,7 @@ export default function CreateJobModal() {
          return { id, name: driver ? driver.name : id };
       });
 
-      await addDoc(collection(db, `companies/${companyId}/jobs`), {
+      const jobData = {
         jobName: name.trim(),
         jobDate: date,
         origin: origin.trim(),
@@ -83,18 +116,28 @@ export default function CreateJobModal() {
         contactNumber: contactNumber.trim(),
         driversNeeded: assignedDrivers.length > 0 ? assignedDrivers.length : 1,
         note: note.trim(),
-        status: assignedDrivers.length > 0 ? 'in-progress' : 'unassigned',
         assignedDrivers,
-        createdBy: currentUser.id,
-        createdAt: serverTimestamp(),
-        archived: false
-      });
+      };
+
+      if (isEditing) {
+        await updateDoc(doc(db, `companies/${companyId}/jobs`, editingJob.id), {
+           ...jobData,
+           status: jobStatus
+        });
+        addToast("Job updated successfully.", "success");
+      } else {
+        await addDoc(collection(db, `companies/${companyId}/jobs`), {
+          ...jobData,
+          status: assignedDrivers.length > 0 ? 'in-progress' : 'unassigned',
+          createdBy: currentUser.id,
+          createdAt: serverTimestamp(),
+          archived: false
+        });
+        addToast("Job created successfully.", "success");
+      }
       
       closeModal('createJob');
-      addToast("Job created successfully.", "success");
-      // Reset form
-      setName(''); setOrigin(''); setDests(['']); setDate(''); setNote('');
-      setContactName(''); setContactNumber(''); setAssignedDriverIds([]);
+      // Form reset is handled by useEffect when modal closes/opens
     } catch (err) {
       console.error(err);
       addToast("Failed to create job", "error");
@@ -119,7 +162,7 @@ export default function CreateJobModal() {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
-          <h2 className="text-xl font-bold text-white">Create New Job</h2>
+          <h2 className="text-xl font-bold text-white">{isEditing ? 'Edit Job' : 'Create New Job'}</h2>
           <button onClick={handleClose} className="text-gray-400 hover:text-white">&times;</button>
         </div>
         
@@ -216,13 +259,27 @@ export default function CreateJobModal() {
               <textarea value={note} onChange={e => setNote(e.target.value)} rows="3" className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"></textarea>
             </div>
 
+            {isEditing && (
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Job Status</label>
+                <select value={jobStatus} onChange={e => setJobStatus(e.target.value)} className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600">
+                   <option value="unassigned">Unassigned</option>
+                   <option value="in-progress">In Progress</option>
+                   <option value="pending-completion">Pending Completion</option>
+                   <option value="completed">Completed</option>
+                   <option value="cancelled">Cancelled</option>
+                   <option value="archived">Archived</option>
+                </select>
+              </div>
+            )}
+
           </form>
         </div>
         
         <div className="p-4 border-t border-gray-700 flex justify-end space-x-2 shrink-0">
            <button type="button" onClick={handleClose} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-semibold">Cancel</button>
            <button type="submit" form="create-job-form" disabled={loading} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold disabled:opacity-50">
-              {loading ? 'Creating...' : 'Create Job'}
+              {loading ? 'Saving...' : (isEditing ? 'Save Changes' : 'Create Job')}
            </button>
         </div>
 

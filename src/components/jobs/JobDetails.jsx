@@ -6,8 +6,8 @@ import { db, storage } from '../../firebase';
 import { doc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp, query, onSnapshot, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-export default function JobDetails() {
-  const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo } = useAppStore();
+export default function JobDetails({ onClose }) {
+  const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo, openModal } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
   const jobs = useJobs();
   const activeDrivers = useActiveDrivers();
@@ -47,19 +47,6 @@ export default function JobDetails() {
       setWeather(null);
     }
   }, [routeInfo?.destinationCoords]);
-
-  // Voice Directions handler
-  const handleReadDirections = () => {
-    if (!routeInfo?.steps || routeInfo.steps.length === 0) {
-       addToast("No directions available to read.", "error");
-       return;
-    }
-    
-    window.speechSynthesis.cancel();
-    const summary = `Route summary. Distance is ${routeInfo.distance}, estimated time is ${routeInfo.duration}. Next step: ${routeInfo.steps[0]}`;
-    const utterance = new SpeechSynthesisUtterance(summary);
-    window.speechSynthesis.speak(utterance);
-  };
 
   // Chat listener
   useEffect(() => {
@@ -107,7 +94,12 @@ export default function JobDetails() {
         }
     }
     
-    if (status === 'archived') updates.archived = true;
+    if (status === 'archived') {
+        updates.archived = true;
+        updates.previousStatus = job.status;
+    } else {
+        updates.archived = false;
+    }
     if (status === 'completed') updates.completedAt = serverTimestamp();
 
     await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), updates);
@@ -169,6 +161,24 @@ export default function JobDetails() {
     }
     setSending(false);
   };
+  const getNavigateLink = () => {
+    const dests = job.destinations || (job.destination ? [job.destination] : []);
+    if (dests.length === 0) return '#';
+    
+    const finalDest = dests[dests.length - 1];
+    let link = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(finalDest)}`;
+    
+    if (dests.length > 1) {
+      const waypoints = dests.slice(0, -1).map(d => encodeURIComponent(d)).join('|');
+      link += `&waypoints=${waypoints}`;
+    }
+    return link;
+  };
+
+  const getStreetViewLink = () => {
+    if (!routeInfo?.destinationCoords) return '#';
+    return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${routeInfo.destinationCoords.lat},${routeInfo.destinationCoords.lng}`;
+  };
 
   return (
     <div className="absolute right-0 top-0 bottom-0 w-80 lg:w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-20 shadow-2xl transition-transform duration-300">
@@ -193,12 +203,24 @@ export default function JobDetails() {
       </div>
 
       {/* Details */}
-      <div className="p-4 border-b border-gray-800 overflow-y-auto max-h-64 shrink-0 text-sm space-y-2">
+      <div className="flex-1 p-4 border-b border-gray-800 overflow-y-auto text-sm space-y-2">
         <p className="text-gray-400"><strong className="text-gray-200">From:</strong> {job.origin}</p>
         <div className="text-gray-400"><strong className="text-gray-200">Destinations:</strong>
             <ul className="list-decimal ml-5 mt-1 text-xs">
                 {(job.destinations || [job.destination]).map((d, i) => <li key={i}>{d}</li>)}
             </ul>
+        </div>
+        <div className="flex space-x-2 mt-2">
+            {getNavigateLink() !== '#' && (
+              <a href={getNavigateLink()} target="_blank" rel="noopener noreferrer" className="flex-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors">
+                 <span className="mr-1">🧭</span> Navigate
+              </a>
+            )}
+            {getStreetViewLink() !== '#' && (
+              <a href={getStreetViewLink()} target="_blank" rel="noopener noreferrer" className="flex-1 bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors">
+                 <span className="mr-1">📸</span> Street View
+              </a>
+            )}
         </div>
         {job.note && <p className="text-gray-400 p-2 bg-gray-800 rounded italic text-xs mt-2">{job.note}</p>}
         <div className="text-gray-400 mt-2">
@@ -209,13 +231,25 @@ export default function JobDetails() {
                       const activeInfo = activeDrivers.find(ad => ad.id === d.id);
                       const isStale = activeInfo && activeInfo.timestamp && activeInfo.timestamp.toMillis() < Date.now() - (5 * 60 * 1000);
                       let statusColor = 'bg-gray-500'; // Offline
+                      let statusText = 'Offline';
+                      let dotStyle = activeInfo?.color ? { backgroundColor: activeInfo.color } : {};
+                      
                       if (activeInfo && !isStale) {
-                          statusColor = activeInfo.status === 'Available' ? 'bg-green-500' : 'bg-yellow-500';
+                          statusText = 'Available';
+                          const isDriving = jobs.some(j => j.status === 'in-progress' && j.assignedDrivers?.some(ad => ad.id === d.id));
+                          if (isDriving) statusText = 'Driving';
+
+                          if (!activeInfo.color) {
+                              statusColor = statusText === 'Available' ? 'bg-green-500' : 'bg-yellow-500';
+                          } else {
+                              statusColor = '';
+                          }
                       }
                       return (
-                          <div key={d.id} className="flex items-center space-x-1 bg-gray-800 px-2 py-1 rounded border border-gray-700">
-                             <span className={`w-2 h-2 rounded-full ${statusColor}`}></span>
-                             <span className="text-xs text-gray-200">{d.name}</span>
+                          <div key={d.id} className="flex items-center space-x-1.5 bg-gray-800 px-2 py-1 rounded border border-gray-700">
+                             <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} style={dotStyle}></span>
+                             <span className="text-xs text-gray-200 font-medium truncate max-w-[80px]">{d.name}</span>
+                             <span className="text-[10px] text-gray-400">({statusText})</span>
                           </div>
                       );
                    })}
@@ -254,16 +288,22 @@ export default function JobDetails() {
            {canAssign && isAssigned && <button onClick={() => updateStatus('unassigned', false, true)} className="bg-red-600 hover:bg-red-700 text-white rounded py-1 text-xs font-semibold shadow">Unassign Me</button>}
            {isAssigned && job.status !== 'pending-completion' && <button onClick={() => updateStatus('pending-completion')} className="bg-green-600 hover:bg-green-700 text-white rounded py-1 text-xs font-semibold shadow">Request Completion</button>}
            
-           {isAssigned && <button onClick={handleReadDirections} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded py-1 text-xs font-semibold shadow col-span-2 mt-1">🔊 Read Route Summary</button>}
-           
-           {isDispatchView && job.status !== 'completed' && job.status !== 'archived' && <button onClick={() => updateStatus('completed')} className="bg-gray-600 hover:bg-gray-500 text-white rounded py-1 text-xs font-semibold shadow">Mark Complete</button>}
+           {isDispatchView && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
+             <>
+               <button onClick={() => updateStatus('completed')} className="bg-green-700 hover:bg-green-600 text-white rounded py-1 text-xs font-semibold shadow">Complete Job</button>
+               <button onClick={() => updateStatus('cancelled')} className="bg-orange-700 hover:bg-orange-600 text-white rounded py-1 text-xs font-semibold shadow">Cancel Job</button>
+             </>
+           )}
            {isDispatchView && job.status !== 'archived' && <button onClick={() => updateStatus('archived')} className="bg-gray-700 hover:bg-gray-600 border border-gray-500 text-white rounded py-1 text-xs font-semibold shadow">Archive</button>}
-           {isDispatchView && <button onClick={handleDelete} className="bg-red-900 hover:bg-red-800 text-red-200 rounded py-1 text-xs font-semibold shadow col-span-2 mt-2">Delete Job</button>}
+           {isDispatchView && job.status === 'archived' && <button onClick={() => updateStatus(job.previousStatus || 'completed')} className="bg-gray-600 hover:bg-gray-500 border border-gray-400 text-white rounded py-1 text-xs font-semibold shadow">Unarchive</button>}
+           {isDispatchView && <button onClick={() => openModal('createJob', { editMode: true, job })} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded py-1 text-xs font-semibold shadow col-span-2 mt-2">Edit Job</button>}
+           <button onClick={() => openModal('invite')} className="bg-teal-600 hover:bg-teal-700 text-white rounded py-1 text-xs font-semibold shadow col-span-2">Invite Others to Job</button>
+           {isDispatchView && <button onClick={handleDelete} className="bg-red-900 hover:bg-red-800 text-red-200 rounded py-1 text-xs font-semibold shadow col-span-2">Delete Job</button>}
         </div>
       </div>
 
       {/* Chat */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-850">
+      <div className="h-[30%] min-h-[150px] shrink-0 overflow-y-auto p-4 space-y-2 bg-gray-850">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 text-xs mt-4">No messages yet.</div>
         ) : (

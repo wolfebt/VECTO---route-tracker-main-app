@@ -9,12 +9,14 @@ export default function ProfileModal() {
   const addToast = useToastStore((state) => state.addToast);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [color, setColor] = useState('#22c55e');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (modals.profile && currentUser) {
       setName(currentUser.name || '');
       setPhone(currentUser.phone || '');
+      setColor(currentUser.color || '#22c55e');
     }
   }, [modals.profile, currentUser]);
 
@@ -28,9 +30,10 @@ export default function ProfileModal() {
     try {
       await updateDoc(doc(db, 'users', currentUser.id), {
         name: name.trim(),
-        phone: phone.trim()
+        phone: phone.trim(),
+        color
       });
-      setCurrentUser({ ...currentUser, name: name.trim(), phone: phone.trim() });
+      setCurrentUser({ ...currentUser, name: name.trim(), phone: phone.trim(), color });
       closeModal('profile');
       addToast("Profile updated.", "success");
     } catch (err) {
@@ -41,7 +44,7 @@ export default function ProfileModal() {
   };
 
   const handleClose = () => {
-    if (name !== (currentUser?.name || '') || phone !== (currentUser?.phone || '')) {
+    if (name !== (currentUser?.name || '') || phone !== (currentUser?.phone || '') || color !== (currentUser?.color || '#22c55e')) {
       if (!window.confirm("You have unsaved changes. Are you sure you want to close without saving?")) {
         return;
       }
@@ -73,6 +76,16 @@ export default function ProfileModal() {
               placeholder="Mobile Number" 
               className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <div className="flex items-center space-x-4 px-1 mt-2">
+              <label className="text-gray-300 text-sm font-medium flex-1">Map Icon Color</label>
+              <input 
+                type="color" 
+                value={color}
+                onChange={e => setColor(e.target.value)}
+                className="w-12 h-10 rounded border-none cursor-pointer bg-transparent"
+                title="Choose your map icon color"
+              />
+            </div>
           </div>
           <div className="flex justify-end space-x-2 mt-6">
             <button 

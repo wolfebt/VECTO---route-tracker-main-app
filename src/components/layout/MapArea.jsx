@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Map, useMap, useMapsLibrary, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-google-maps';
 import { useAppStore } from '../../store/useAppStore';
 import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 const mapStyles = [
     { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
@@ -82,7 +84,10 @@ function DirectionsComponent() {
       destination: finalDest,
       waypoints: waypoints,
       optimizeWaypoints: job.optimizeRoute !== false,
-      travelMode: google.maps.TravelMode.DRIVING
+      travelMode: google.maps.TravelMode.DRIVING,
+      drivingOptions: {
+        departureTime: new Date(), // Request traffic-aware ETA
+      }
     }).then(response => {
       directionsRenderer.setDirections(response);
       
@@ -91,7 +96,8 @@ function DirectionsComponent() {
           let totalSeconds = 0;
           let totalMeters = 0;
           route.legs.forEach(leg => {
-              if (leg.duration) totalSeconds += leg.duration.value;
+              const dur = leg.duration_in_traffic ? leg.duration_in_traffic.value : (leg.duration ? leg.duration.value : 0);
+              totalSeconds += dur;
               if (leg.distance) totalMeters += leg.distance.value;
           });
           const totalMiles = (totalMeters * 0.000621371).toFixed(1);
@@ -134,10 +140,35 @@ function DriverMarkers() {
   const jobs = useJobs();
   const isDispatchView = useAppStore(state => state.isDispatchView);
   const currentUser = useAppStore(state => state.currentUser);
+  const companyId = useAppStore(state => state.companyId);
   const [selectedDriverId, setSelectedDriverId] = useState(null);
+  const [showNameplates, setShowNameplates] = useState(true);
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+    const listener = map.addListener('click', () => {
+      setSelectedDriverId(null);
+    });
+    return () => google.maps.event.removeListener(listener);
+  }, [map]);
+
+  useEffect(() => {
+     if (!companyId) return;
+     const unsub = onSnapshot(doc(db, 'companies', companyId), (snap) => {
+         if (snap.exists()) {
+             setShowNameplates(snap.data().showNameplates !== false);
+         }
+     });
+     return () => unsub();
+  }, [companyId]);
 
   const fiveMinAgo = Date.now() - (5 * 60 * 1000);
-  const active = drivers.filter(d => d.timestamp && d.timestamp.toMillis() > fiveMinAgo);
+  const active = drivers.filter(d => {
+      if (!d.timestamp) return true;
+      if (typeof d.timestamp.toMillis !== 'function') return true;
+      return d.timestamp.toMillis() > fiveMinAgo;
+  });
 
   let visibleDrivers = active;
   if (!isDispatchView) {
@@ -153,18 +184,22 @@ function DriverMarkers() {
     <>
       {visibleDrivers.map(driver => {
         let statusText = driver.status || 'Available';
-        let pinColor = '#22c55e'; // green-500
+        let pinColor = driver.color || '#22c55e'; // custom color or green-500
         let glyphColor = '#ffffff';
-        let borderColor = '#166534';
+        let borderColor = '#166534'; // We'll just leave border default green-ish or they can have no border for custom
 
         const assignedJob = jobs.find(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === driver.id));
         if (assignedJob) {
             statusText = `On Trip: ${assignedJob.jobName}`;
-            pinColor = '#eab308'; // yellow-500
-            borderColor = '#854d0e';
+            if (!driver.color) {
+                pinColor = '#eab308'; // yellow-500
+                borderColor = '#854d0e';
+            }
         } else if (driver.status === 'Offline') {
-            pinColor = '#6b7280'; // gray-500
-            borderColor = '#374151';
+            if (!driver.color) {
+                pinColor = '#6b7280'; // gray-500
+                borderColor = '#374151';
+            }
         }
 
         const isSelected = selectedDriverId === driver.id;
@@ -174,18 +209,32 @@ function DriverMarkers() {
              <AdvancedMarker 
                 position={{ lat: driver.location.latitude, lng: driver.location.longitude }}
                 onClick={() => setSelectedDriverId(driver.id)}
+                className="cursor-pointer"
+                zIndex={isSelected ? 1000 : 1}
              >
-                <Pin background={pinColor} borderColor={borderColor} glyphColor={glyphColor} scale={1.2} />
+                <div className="flex flex-col items-center hover:scale-110 transition-transform origin-bottom relative">
+                    <Pin background={pinColor} borderColor={borderColor} glyphColor={glyphColor} scale={1.2} />
+                    {showNameplates && (
+                        <div className="absolute top-full mt-0.5 px-1.5 py-0.5 bg-gray-900/90 backdrop-blur-sm rounded text-[10px] text-gray-200 font-bold shadow-lg border border-gray-700/50 whitespace-nowrap z-10 pointer-events-none">
+                           {driver.name || 'Unnamed'} <span className="text-gray-400 font-normal">({statusText.startsWith('On Trip') ? 'Driving' : statusText})</span>
+                        </div>
+                    )}
+                </div>
              </AdvancedMarker>
              
              {isSelected && (
                 <InfoWindow
                   position={{ lat: driver.location.latitude, lng: driver.location.longitude }}
                   onCloseClick={() => setSelectedDriverId(null)}
+                  headerDisabled={true}
                 >
-                  <div className="p-2 text-black max-w-xs">
+                  <div 
+                    className="p-2 text-black max-w-xs cursor-pointer"
+                    onClick={() => setSelectedDriverId(null)}
+                  >
                      <strong className="block mb-1 font-bold">{driver.name || 'Unnamed'}</strong>
-                     <p className="text-xs">{statusText}</p>
+                     <p className="text-xs mb-1">{statusText}</p>
+                     <p className="text-[9px] text-gray-500 italic mt-1 border-t pt-1 border-gray-200">(Click here or outside to close)</p>
                   </div>
                 </InfoWindow>
              )}
@@ -225,8 +274,19 @@ function MapController() {
   return null;
 }
 
+function TrafficOverlay() {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const trafficLayer = new google.maps.TrafficLayer();
+    trafficLayer.setMap(map);
+    return () => trafficLayer.setMap(null);
+  }, [map]);
+  return null;
+}
+
 export default function MapArea() {
-  const apiKey = useAppStore(state => state.mapsApiKey);
+  const apiKey = useAppStore(state => state.mapsApiKey) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
   if (!apiKey) {
     return (
@@ -251,6 +311,7 @@ export default function MapArea() {
         mapId="vecto-main-map"
       >
         <MapController />
+        <TrafficOverlay />
         <DirectionsComponent />
         <DriverMarkers />
       </Map>

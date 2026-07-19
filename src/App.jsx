@@ -44,22 +44,22 @@ function App() {
   }
 
   return (
-    <APIProvider apiKey={mapsApiKey || ''}>
-      <div className="flex h-screen bg-gray-900 text-white overflow-hidden">
+    <APIProvider apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
+      <div className="flex h-screen bg-[#0b0f19] text-white overflow-hidden font-sans">
         {/* Map Area */}
-        <div className="flex-1 bg-gray-800 relative">
+        <div className="flex-1 relative z-0">
             <MapArea />
             {selectedJobId && <JobDetails />}
         </div>
         
         {/* Sidebar Area */}
-        <div className="w-96 border-l border-gray-800 flex flex-col bg-gray-900 z-10 flex-shrink-0 relative h-full">
-           <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+        <div className="w-96 glass-panel z-10 flex-shrink-0 relative h-full flex flex-col border-l border-white/5 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
+           <div className="p-5 border-b border-white/10 flex justify-between items-center bg-slate-900/40 backdrop-blur-md">
              <div>
-               <h1 className="text-xl font-bold">Vecto</h1>
-               <p className="text-sm text-gray-400">Welcome, {currentUser.name}</p>
+               <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Vecto</h1>
+               <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
              </div>
-             <button onClick={() => openModal('settings')} className="text-gray-400 hover:text-white p-2" title="Settings">
+             <button onClick={() => openModal('settings')} className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
                <Settings size={20} />
              </button>
            </div>

@@ -85,66 +85,73 @@ export default function CompanySelector() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden border border-gray-700">
-        <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-white">Join or Create a Company</h2>
-          <button onClick={logout} className="text-red-400 hover:text-red-300 flex items-center">
-             <LogOut size={16} className="mr-1" /> Logout
+    <div className="fixed inset-0 bg-[#0b0f19]/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+      <div className="glass-panel rounded-2xl w-full max-w-lg overflow-hidden animate-modal-enter relative">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-primary-500 to-transparent opacity-50"></div>
+        
+        <div className="p-6 border-b border-white/10 flex justify-between items-center bg-slate-900/40">
+          <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Company Portal</h2>
+          <button onClick={logout} className="text-gray-400 hover:text-red-400 flex items-center transition-colors">
+             <LogOut size={18} className="mr-2" /> Logout
           </button>
         </div>
         
-        <div className="p-4">
+        <div className="p-6">
            {selectedCompanyIdToJoin ? (
-             <div>
-                <h3 className="text-lg font-bold text-white mb-2">Enter Password</h3>
+             <div className="animate-modal-enter">
+                <h3 className="text-lg font-bold text-white mb-4">Security Check</h3>
+                <p className="text-sm text-gray-400 mb-4">This company requires a password to join.</p>
                 <input 
                   type="password" 
                   value={joinPassword} 
                   onChange={e => setJoinPassword(e.target.value)}
-                  className="w-full bg-gray-700 text-white rounded p-2 mb-2"
-                  placeholder="Company Password"
+                  className="glass-input mb-6"
+                  placeholder="Enter Password"
+                  autoFocus
                 />
-                <div className="flex justify-end space-x-2">
-                  <button onClick={() => setSelectedCompanyIdToJoin(null)} className="px-4 py-2 bg-gray-600 rounded">Cancel</button>
-                  <button onClick={() => handleJoin(selectedCompanyIdToJoin, joinPassword)} className="px-4 py-2 bg-blue-600 rounded">Join</button>
+                <div className="flex justify-end space-x-3">
+                  <button onClick={() => setSelectedCompanyIdToJoin(null)} className="btn-secondary">Cancel</button>
+                  <button onClick={() => handleJoin(selectedCompanyIdToJoin, joinPassword)} className="btn-primary">Join Company</button>
                 </div>
              </div>
            ) : (
              <>
-                <div className="mb-6">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Available Companies</h3>
-                  <ul className="max-h-48 overflow-y-auto space-y-2">
-                    {loading ? <p className="text-gray-400 text-sm">Loading...</p> : 
+                <div className="mb-8">
+                  <h3 className="text-xs font-bold text-primary-400 uppercase tracking-wider mb-4">Available Companies</h3>
+                  <ul className="max-h-48 overflow-y-auto space-y-3 pr-2">
+                    {loading ? <p className="text-gray-400 text-sm animate-pulse">Scanning network...</p> : 
                      companies.length === 0 ? <p className="text-gray-400 text-sm">No companies found.</p> :
                      companies.map(comp => (
-                       <li key={comp.id} className="flex justify-between items-center p-2 bg-gray-700 rounded">
-                         <span className="text-gray-200">{comp.name} {comp.requirePassword && '🔒'}</span>
-                         <button onClick={() => handleJoinClick(comp.id)} className="px-3 py-1 bg-teal-600 text-white rounded hover:bg-teal-700 text-sm">Join</button>
+                       <li key={comp.id} className="flex justify-between items-center p-3 glass-card group">
+                         <span className="text-gray-200 font-medium flex items-center">
+                           {comp.name} 
+                           {comp.requirePassword && <span className="ml-2 text-xs bg-slate-700/50 px-2 py-1 rounded text-gray-400 border border-white/5">Secured</span>}
+                         </span>
+                         <button onClick={() => handleJoinClick(comp.id)} className="px-4 py-1.5 bg-white/10 hover:bg-primary-500 text-white rounded-lg transition-all duration-300 text-sm border border-white/10 hover:border-transparent">Join</button>
                        </li>
                      ))}
                   </ul>
                 </div>
                 
-                <div className="border-t border-gray-700 pt-4">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Create New Company</h3>
-                  <form onSubmit={handleCreate} className="space-y-2">
+                <div className="border-t border-white/10 pt-6">
+                  <h3 className="text-xs font-bold text-accent-400 uppercase tracking-wider mb-4">Create New Fleet</h3>
+                  <form onSubmit={handleCreate} className="space-y-4">
                     <input 
                       type="text" 
                       placeholder="Company Name" 
-                      className="w-full bg-gray-700 text-white rounded p-2" 
+                      className="glass-input" 
                       value={newCompanyName}
                       onChange={(e) => setNewCompanyName(e.target.value)}
                       required 
                     />
                     <input 
                       type="password" 
-                      placeholder="Password (Optional)" 
-                      className="w-full bg-gray-700 text-white rounded p-2" 
+                      placeholder="Access Password (Optional)" 
+                      className="glass-input" 
                       value={newCompanyPassword}
                       onChange={(e) => setNewCompanyPassword(e.target.value)}
                     />
-                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded font-bold">Create Company</button>
+                    <button type="submit" className="w-full btn-accent py-3 text-lg mt-2">Initialize Company</button>
                   </form>
                 </div>
              </>

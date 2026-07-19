@@ -7,6 +7,10 @@ export const useAppStore = create((set) => ({
   setCurrentUser: (user) => set({ currentUser: user, isAuthReady: true }),
   mapsApiKey: '',
   setMapsApiKey: (key) => set({ mapsApiKey: key }),
+  firebaseApiKey: '',
+  setFirebaseApiKey: (key) => set({ firebaseApiKey: key }),
+  geminiApiKey: '',
+  setGeminiApiKey: (key) => set({ geminiApiKey: key }),
 
   // Company State
   companyId: null,

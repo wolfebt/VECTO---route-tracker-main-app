@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Map, useMap, useMapsLibrary, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-google-maps';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Map, useMap, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-google-maps';
 import { useAppStore } from '../../store/useAppStore';
 import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
+import { useDirections } from '../../hooks/useDirections';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -28,136 +29,10 @@ const mapStyles = [
 
 function DirectionsComponent() {
   const map = useMap();
-  const routesLibrary = useMapsLibrary('routes');
-  const [directionsService, setDirectionsService] = useState(null);
-  const [directionsRenderer, setDirectionsRenderer] = useState(null);
-  
   const selectedJobId = useAppStore(state => state.selectedJobId);
-  const setRouteInfo = useAppStore(state => state.setRouteInfo);
   const jobs = useJobs();
-  const colors = useAppStore(state => state.colors);
 
-  const lastRouteSignature = React.useRef(null);
-
-  // Initialize Directions Service and Renderer
-  useEffect(() => {
-    if (!routesLibrary || !map) return;
-    const ds = new routesLibrary.DirectionsService();
-    const dr = new routesLibrary.DirectionsRenderer({ map });
-    setDirectionsService(ds);
-    setDirectionsRenderer(dr);
-    
-    return () => dr.setMap(null);
-  }, [routesLibrary, map]);
-
-  // Update Route when selected job changes
-  useEffect(() => {
-    if (!directionsService || !directionsRenderer) return;
-
-    if (!selectedJobId) {
-      directionsRenderer.setMap(null);
-      lastRouteSignature.current = null;
-      return;
-    }
-
-    const job = jobs.find(j => j.id === selectedJobId);
-    if (!job) {
-      directionsRenderer.setMap(null);
-      lastRouteSignature.current = null;
-      return;
-    }
-
-    const dests = job.destinations || (job.destination ? [job.destination] : []);
-    if (dests.length === 0) {
-      directionsRenderer.setMap(null);
-      return;
-    }
-
-    let waypoints = [];
-    let finalDest = dests[0];
-
-    if (dests.length > 1) {
-         waypoints = dests.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
-         finalDest = dests[dests.length - 1];
-    }
-
-    // Set line color
-    let hash = 0;
-    for (let i = 0; i < job.id.length; i++) hash = job.id.charCodeAt(i) + ((hash << 5) - hash);
-    const defaultColor = colors[Math.abs(hash) % colors.length];
-    const color = job.routeColor || defaultColor;
-
-    directionsRenderer.setOptions({
-        polylineOptions: { strokeColor: color, strokeOpacity: 0.8, strokeWeight: 5 }
-    });
-
-    const currentSignature = JSON.stringify({ origin: job.origin, dests, optimize: job.optimizeRoute });
-    if (lastRouteSignature.current === currentSignature) {
-        // We already routed this exact job configuration
-        directionsRenderer.setMap(map);
-        return;
-    }
-
-    directionsRenderer.setMap(map);
-
-    directionsService.route({
-      origin: job.origin,
-      destination: finalDest,
-      waypoints: waypoints,
-      optimizeWaypoints: waypoints.length > 0 ? job.optimizeRoute !== false : false,
-      travelMode: 'DRIVING',
-      drivingOptions: {
-        departureTime: new Date(), // Request traffic-aware ETA
-      }
-    }).then(response => {
-      directionsRenderer.setDirections(response);
-      lastRouteSignature.current = currentSignature; // Update signature on success
-      
-      if (response.routes && response.routes.length > 0) {
-          const route = response.routes[0];
-          let totalSeconds = 0;
-          let totalMeters = 0;
-          route.legs.forEach(leg => {
-              const dur = leg.duration_in_traffic ? leg.duration_in_traffic.value : (leg.duration ? leg.duration.value : 0);
-              totalSeconds += dur;
-              if (leg.distance) totalMeters += leg.distance.value;
-          });
-          const totalMiles = (totalMeters * 0.000621371).toFixed(1);
-          
-          const h = Math.floor(totalSeconds / 3600);
-          const m = Math.floor((totalSeconds % 3600) / 60);
-          const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
-          
-          // Get final destination coordinates for weather API
-          const lastLeg = route.legs[route.legs.length - 1];
-          const endLoc = lastLeg ? lastLeg.end_location : null;
-          const destCoords = endLoc ? (typeof endLoc.lat === 'function' ? { lat: endLoc.lat(), lng: endLoc.lng() } : { lat: endLoc.lat, lng: endLoc.lng }) : null;
-
-          // Extract plain-text step instructions for voice directions
-          const allSteps = route.legs.flatMap(leg => leg.steps);
-          const plainTextSteps = allSteps.map(step => {
-             // Strip HTML tags provided by Google Maps
-             const stripped = step.instructions ? step.instructions.replace(/<[^>]*>?/gm, '') : '';
-             return stripped;
-          }).filter(Boolean);
-          
-          setRouteInfo({ 
-             distance: `${totalMiles} mi`, 
-             duration: timeStr,
-             destinationCoords: destCoords,
-             steps: plainTextSteps
-          });
-      }
-    }).catch(e => {
-      console.error("Directions request failed", e);
-      // Don't toast if it's just zero results on an ongoing basis to avoid spam, but we do want to notify
-      import('../../store/useToastStore').then(({ useToastStore }) => {
-        useToastStore.getState().addToast(`Could not find a route: ${e.message || "Check addresses"}`, "error");
-      });
-      directionsRenderer.setMap(null); // Hide failed route
-    });
-
-  }, [selectedJobId, jobs, directionsService, directionsRenderer, colors, setRouteInfo, map]);
+  useDirections({ map, selectedJobId, jobs });
 
   return null;
 }
@@ -190,41 +65,45 @@ function DriverMarkers() {
      return () => unsub();
   }, [companyId, currentUser]);
 
-  const fiveMinAgo = Date.now() - (5 * 60 * 1000);
-  const active = drivers.filter(d => {
-      if (!d.timestamp) return true;
-      if (typeof d.timestamp.toMillis !== 'function') return true;
-      return d.timestamp.toMillis() > fiveMinAgo;
-  });
+  const visibleDrivers = useMemo(() => {
+    const fiveMinAgo = Date.now() - (5 * 60 * 1000);
+    const active = drivers.filter(d => {
+        if (!d.timestamp) return true;
+        if (typeof d.timestamp.toMillis !== 'function') return true;
+        return d.timestamp.toMillis() > fiveMinAgo;
+    });
 
-  let visibleDrivers = active;
-  if (!isDispatchView) {
-      const myJobs = jobs.filter(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === currentUser.id));
-      const myTeammates = new Set();
-      myJobs.forEach(j => {
-          j.assignedDrivers?.forEach(d => myTeammates.add(d.id));
-      });
-      visibleDrivers = active.filter(d => d.id === currentUser.id || myTeammates.has(d.id));
-  }
+    if (isDispatchView) {
+      return active;
+    }
+
+    const myJobs = jobs.filter(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === currentUser?.id));
+    const myTeammates = new Set();
+    myJobs.forEach(j => {
+        j.assignedDrivers?.forEach(d => myTeammates.add(d.id));
+    });
+
+    return active.filter(d => d.id === currentUser?.id || myTeammates.has(d.id));
+  }, [drivers, jobs, isDispatchView, currentUser?.id]);
 
   return (
     <>
       {visibleDrivers.map(driver => {
         let statusText = driver.status || 'Available';
-        let pinColor = driver.color || '#22c55e'; // custom color or green-500
+        let pinColor = driver.color || '#22c55e';
         let glyphColor = '#ffffff';
-        let borderColor = '#166534'; // We'll just leave border default green-ish or they can have no border for custom
+        let borderColor = '#166534';
 
         const assignedJob = jobs.find(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === driver.id));
         if (assignedJob) {
             statusText = `On Trip: ${assignedJob.jobName}`;
             if (!driver.color) {
-                pinColor = '#eab308'; // yellow-500
+                pinColor = '#eab308';
                 borderColor = '#854d0e';
             }
         } else if (driver.status === 'Offline') {
             if (!driver.color) {
-                pinColor = '#6b7280'; // gray-500
+                pinColor = '#6b7280';
                 borderColor = '#374151';
             }
         }
@@ -336,6 +215,7 @@ export default function MapArea() {
         gestureHandling={'greedy'}
         disableDefaultUI={false}
         mapId="vecto-main-map"
+        styles={mapStyles}
       >
         <MapController />
         <TrafficOverlay />

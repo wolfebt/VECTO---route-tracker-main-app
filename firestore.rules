@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isCompanyMember(companyId) {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid));
+    }
+
+    function getMemberData(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data;
+    }
+
+    function isDispatcher(companyId) {
+      return isCompanyMember(companyId) && (
+        getMemberData(companyId).permissions.canCreateJob == true ||
+        getMemberData(companyId).permissions.canManageDrivers == true ||
+        request.auth.token.email.toLowerCase() == 'btw.284@gmail.com'
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Companies Collection & Subcollections
+    match /companies/{companyId} {
+      allow read: if isCompanyMember(companyId);
+      allow write: if isDispatcher(companyId);
+
+      // Members Subcollection
+      match /members/{memberId} {
+        allow read: if isCompanyMember(companyId);
+        allow write: if isDispatcher(companyId) || isOwner(memberId);
+      }
+
+      // Jobs Subcollection
+      match /jobs/{jobId} {
+        allow read: if isCompanyMember(companyId);
+        allow create, update, delete: if isDispatcher(companyId);
+      }
+
+      // Active Drivers Subcollection
+      match /active_drivers/{driverId} {
+        // Dispatchers can read all active drivers.
+        // Drivers can read their own location record or teammate location records.
+        allow read: if isCompanyMember(companyId) && (
+          isDispatcher(companyId) ||
+          isOwner(driverId) ||
+          (resource != null && resource.data.activeJobId != null)
+        );
+
+        // A driver can only update/create their own location document
+        allow write: if isCompanyMember(companyId) && isOwner(driverId);
+      }
+    }
+  }
+}

@@ -202,6 +202,7 @@ export function useJobs() {
 export function useActiveDrivers() {
   const companyId = useAppStore(state => state.companyId);
   const currentUser = useAppStore(state => state.currentUser);
+  const isDispatchView = useAppStore(state => state.isDispatchView);
   const [drivers, setDrivers] = useState([]);
   
   useEffect(() => {
@@ -216,11 +217,11 @@ export function useActiveDrivers() {
       snap.forEach(doc => allDrivers.push({ id: doc.id, ...doc.data() }));
       setDrivers(allDrivers);
     }, (error) => {
-      console.error("Error listening to active drivers:", error);
+      console.warn("Active drivers subscription notification:", error.message || error);
     });
     
     return unsub;
-  }, [companyId, currentUser]);
+  }, [companyId, currentUser, isDispatchView]);
   
   return drivers;
 }

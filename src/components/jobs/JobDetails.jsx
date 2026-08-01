@@ -60,6 +60,8 @@ export default function JobDetails({ onClose }) {
       snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
       msgs.sort((a,b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
       setMessages(msgs);
+    }, (error) => {
+      console.warn("Job chat snapshot listener error:", error);
     });
     return unsub;
   }, [selectedJobId, companyId]);

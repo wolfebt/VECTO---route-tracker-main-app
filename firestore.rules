@@ -35,8 +35,9 @@ service cloud.firestore {
 
     // Companies Collection & Subcollections
     match /companies/{companyId} {
-      allow read: if isCompanyMember(companyId);
-      allow write: if isDispatcher(companyId);
+      // Authenticated users can read/list companies to view/join them
+      allow read, create: if isAuthenticated();
+      allow update, delete: if isDispatcher(companyId);
 
       // Members Subcollection
       match /members/{memberId} {
@@ -47,7 +48,13 @@ service cloud.firestore {
       // Jobs Subcollection
       match /jobs/{jobId} {
         allow read: if isCompanyMember(companyId);
-        allow create, update, delete: if isDispatcher(companyId);
+        allow create, delete: if isDispatcher(companyId);
+        allow update: if isCompanyMember(companyId);
+
+        // Job Chat Subcollection
+        match /chat/{chatId} {
+          allow read, write: if isCompanyMember(companyId);
+        }
       }
 
       // Active Drivers Subcollection

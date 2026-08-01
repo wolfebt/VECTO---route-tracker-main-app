@@ -61,6 +61,8 @@ function DriverMarkers() {
          if (snap.exists()) {
              setShowNameplates(snap.data().showNameplates !== false);
          }
+     }, (error) => {
+         console.warn("Company document snapshot error:", error);
      });
      return () => unsub();
   }, [companyId, currentUser]);

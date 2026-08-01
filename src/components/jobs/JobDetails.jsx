@@ -5,6 +5,7 @@ import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
 import { db, storage } from '../../firebase';
 import { doc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp, query, onSnapshot, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { QrCode } from 'lucide-react';
 
 export default function JobDetails({ onClose }) {
   const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo, openModal } = useAppStore();
@@ -318,7 +319,13 @@ export default function JobDetails({ onClose }) {
            {isDispatchView && job.status !== 'archived' && <button onClick={() => updateStatus('archived')} className="bg-gray-700 hover:bg-gray-600 border border-gray-500 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Archive</button>}
            {isDispatchView && job.status === 'archived' && <button onClick={() => updateStatus(job.previousStatus || 'completed')} className="bg-gray-600 hover:bg-gray-500 border border-gray-400 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Unarchive</button>}
            {isDispatchView && <button onClick={() => openModal('createJob', { editMode: true, job })} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 mt-2 focus-visible:ring-2 focus-visible:ring-white">Edit Job</button>}
-           <button onClick={() => openModal('invite')} className="bg-teal-600 hover:bg-teal-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 focus-visible:ring-2 focus-visible:ring-white">Invite Others to Job</button>
+            <button 
+              onClick={() => openModal('invite', { jobId: job.id, jobName: job.jobName })} 
+              className="bg-teal-600 hover:bg-teal-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 flex items-center justify-center space-x-1.5 focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <QrCode size={16} />
+              <span>Invite / Onboard Driver (QR Code)</span>
+            </button>
            {isDispatchView && <button onClick={handleDelete} className="bg-red-900 hover:bg-red-800 text-red-200 rounded py-2 text-xs font-semibold shadow col-span-2 focus-visible:ring-2 focus-visible:ring-white">Delete Job</button>}
         </div>
       </div>

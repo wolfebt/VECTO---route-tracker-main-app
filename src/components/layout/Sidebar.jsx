@@ -4,7 +4,7 @@ import JobsList from '../jobs/JobsList';
 import DriversList from '../jobs/DriversList';
 import { useLocationSharing } from '../../hooks/useLocationSharing';
 import { useToastStore } from '../../store/useToastStore';
-import { MapPin, Cloud } from 'lucide-react';
+import { MapPin, Cloud, QrCode } from 'lucide-react';
 
 export default function Sidebar() {
   const isDispatchView = useAppStore(state => state.isDispatchView);
@@ -79,17 +79,26 @@ export default function Sidebar() {
     <div className="flex flex-col h-full bg-slate-900/50 backdrop-blur-md">
       <div className="mb-6 p-4">
         <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-3">Company Workspace</h2>
-        <div 
-          onClick={() => openModal('companySettings')}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openModal('companySettings'); }}
-          aria-label="Company Settings"
-          className="flex justify-between items-center bg-white/5 border border-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/10 transition-all duration-300 group shadow-sm focus-visible:ring-2 focus-visible:ring-primary-500"
-          title="Company Settings"
-        >
-          <span className="font-semibold text-gray-200 group-hover:text-white transition-colors">{companyName}</span>
-          <span className="text-xs uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-2 py-1 rounded">Settings</span>
+        <div className="grid grid-cols-5 gap-2">
+          <div 
+            onClick={() => openModal('companySettings')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openModal('companySettings'); }}
+            aria-label="Company Settings"
+            className="col-span-4 flex justify-between items-center bg-white/5 border border-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/10 transition-all duration-300 group shadow-sm focus-visible:ring-2 focus-visible:ring-primary-500"
+            title="Company Settings"
+          >
+            <span className="font-semibold text-gray-200 group-hover:text-white transition-colors truncate">{companyName}</span>
+            <span className="text-xs uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-2 py-1 rounded shrink-0">Settings</span>
+          </div>
+          <button 
+            onClick={() => openModal('invite')}
+            className="col-span-1 bg-teal-600/20 border border-teal-500/30 text-teal-400 hover:bg-teal-600/30 rounded-xl flex items-center justify-center transition-colors"
+            title="Invite & Onboard Team (QR Code)"
+          >
+            <QrCode size={18} />
+          </button>
         </div>
       </div>
       

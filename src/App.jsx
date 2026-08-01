@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from './store/useAppStore';
 import { useAuth, useCompany } from './hooks/useFirebase';
+import { useUrlOnboarding } from './hooks/useUrlOnboarding';
 import Auth from './components/Auth';
 import CompanySelector from './components/CompanySelector';
 import Sidebar from './components/layout/Sidebar';
@@ -30,6 +31,9 @@ function App() {
   
   // Listen to active company members (updates isDispatchView)
   useCompany();
+
+  // Process QR code & URL parameters for company/job onboarding
+  useUrlOnboarding();
 
   if (!isAuthReady) {
     return <div className="flex items-center justify-center min-h-screen bg-gray-900"><div className="text-white">Loading...</div></div>;

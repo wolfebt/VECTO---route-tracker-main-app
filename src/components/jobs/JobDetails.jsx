@@ -190,7 +190,7 @@ export default function JobDetails({ onClose }) {
   };
 
   return (
-    <div className="absolute right-0 top-0 bottom-0 w-80 lg:w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-20 shadow-2xl transition-transform duration-300">
+    <div className="absolute right-0 top-0 bottom-0 w-full max-w-full md:max-w-md md:w-80 lg:w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-30 shadow-2xl transition-transform duration-300">
       
       {/* Header */}
       <div className="p-4 border-b border-gray-800 flex justify-between items-start shrink-0">

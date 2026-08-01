@@ -7,7 +7,13 @@ export default function JobsList() {
   const activeJobTab = useAppStore(state => state.activeJobTab);
   const selectedJobId = useAppStore(state => state.selectedJobId);
   const setSelectedJobId = useAppStore(state => state.setSelectedJobId);
+  const setMobileView = useAppStore(state => state.setMobileView);
   const colors = useAppStore(state => state.colors);
+
+  const handleSelectJob = (id) => {
+    setSelectedJobId(id);
+    setMobileView('map');
+  };
 
   const isArchived = activeJobTab === 'archive';
   const filteredJobs = jobs
@@ -52,7 +58,7 @@ export default function JobsList() {
         return (
           <li 
             key={job.id} 
-            onClick={() => setSelectedJobId(job.id)}
+            onClick={() => handleSelectJob(job.id)}
             className={`p-3 rounded-md text-sm cursor-pointer border-l-4 transition-all ${statusClass} ${isSelected ? 'selected-job-card' : 'border-transparent'}`}
             style={{ borderLeftColor: (job.status === 'in-progress' && !isSelected) ? color : undefined }}
           >

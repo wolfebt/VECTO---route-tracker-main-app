@@ -196,6 +196,7 @@ function TrafficOverlay() {
 
 export default function MapArea() {
   const apiKey = useAppStore(state => state.mapsApiKey) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const setMobileView = useAppStore(state => state.setMobileView);
 
   if (!apiKey) {
     return (
@@ -211,6 +212,15 @@ export default function MapArea() {
 
   return (
     <>
+      {/* Mobile Back to List Button */}
+      <button 
+        onClick={() => setMobileView('sidebar')}
+        className="md:hidden absolute top-4 left-4 z-20 bg-slate-900/90 text-white border border-white/15 px-3.5 py-2 rounded-full text-xs font-bold shadow-xl flex items-center space-x-1.5 backdrop-blur-md hover:bg-slate-800 transition-colors"
+        title="Back to List"
+      >
+        <span>← List</span>
+      </button>
+
       <Map
         defaultCenter={{ lat: 39.8283, lng: -98.5795 }}
         defaultZoom={4}
@@ -247,7 +257,7 @@ export default function MapArea() {
             });
           }
         }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg z-10 flex items-center justify-center transition-colors"
+        className="absolute bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg z-10 flex items-center justify-center transition-colors"
         title="My Location"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

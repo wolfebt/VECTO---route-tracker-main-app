@@ -24,6 +24,8 @@ export const useAppStore = create((set) => ({
   clearCompany: () => set({ companyId: null, companyName: null, isDispatchView: false }),
 
   // UI & Job State
+  mobileView: 'sidebar', // 'sidebar' | 'map'
+  setMobileView: (view) => set({ mobileView: view }),
   activeJobTab: 'current',
   setActiveJobTab: (tab) => set({ activeJobTab: tab }),
   selectedJobId: null,

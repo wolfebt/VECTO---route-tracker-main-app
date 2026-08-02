@@ -16,12 +16,16 @@ export const useAppStore = create((set) => ({
   companyId: null,
   companyName: null,
   isDispatchView: false,
-  setCompany: (id, name, isDispatch) => set({ 
-    companyId: id, 
-    companyName: name, 
-    isDispatchView: isDispatch 
-  }),
-  clearCompany: () => set({ companyId: null, companyName: null, isDispatchView: false }),
+  setCompany: (id, name, isDispatch) => {
+    if (id) {
+      try { localStorage.setItem('vecto_last_company_id', id); } catch (e) { console.warn(e); }
+    }
+    set({ companyId: id, companyName: name, isDispatchView: isDispatch });
+  },
+  clearCompany: () => {
+    try { localStorage.removeItem('vecto_last_company_id'); } catch (e) { console.warn(e); }
+    set({ companyId: null, companyName: null, isDispatchView: false });
+  },
 
   // UI & Job State
   mobileView: 'sidebar', // 'sidebar' | 'map'

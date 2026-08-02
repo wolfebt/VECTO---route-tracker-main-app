@@ -94,9 +94,48 @@ function App() {
         onTouchEnd={handleTouchEnd}
         className="h-screen bg-[#0b0f19] text-white overflow-hidden font-sans relative"
       >
+        {/* Thin Mobile Top Navigation Bar */}
+        <div className="md:hidden fixed top-0 left-0 right-0 h-12 z-50 bg-slate-950/90 backdrop-blur-2xl border-b border-white/10 px-3 flex items-center justify-between shadow-xl">
+          {/* Left: Branding */}
+          <div className="flex items-center space-x-2">
+            <h1 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Vecto</h1>
+          </div>
+
+          {/* Center: Thin View Switcher Segment Control */}
+          <div className="flex items-center bg-slate-900/90 border border-white/15 p-0.5 rounded-lg shadow-inner">
+            <button 
+              onClick={() => setMobileViewAndResize('map')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all duration-200 flex items-center space-x-1.5 ${
+                mobileView === 'map' 
+                  ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-sm' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Map size={13} />
+              <span>Map</span>
+            </button>
+            <button 
+              onClick={() => setMobileViewAndResize('sidebar')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all duration-200 flex items-center space-x-1.5 ${
+                mobileView === 'sidebar' 
+                  ? 'bg-gradient-to-r from-teal-500 to-emerald-600 text-white shadow-sm' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {selectedJobId ? <FileText size={13} /> : <List size={13} />}
+              <span>{selectedJobId ? 'Job Info' : 'Jobs'}</span>
+            </button>
+          </div>
+
+          {/* Right: Settings */}
+          <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-1.5 transition-colors hover:bg-white/5 rounded-full" title="Settings">
+            <Settings size={18} />
+          </button>
+        </div>
+
         {/* Carousel Slider (Mobile: 2-panel slider; Desktop: side-by-side flex) */}
         <div 
-          className={`flex h-full w-[200vw] md:w-full transition-transform duration-300 ease-out ${
+          className={`flex h-full w-[200vw] md:w-full transition-transform duration-300 ease-out pt-12 md:pt-0 ${
             mobileView === 'sidebar' ? '-translate-x-[100vw] md:translate-x-0' : 'translate-x-0'
           }`}
         >
@@ -112,10 +151,11 @@ function App() {
           
           {/* Panel 2 (Right Side on Mobile / Right Sidebar on Desktop): Job Info & Sidebar */}
           <div className="w-[100vw] md:w-96 glass-panel z-10 shrink-0 relative h-full flex flex-col border-l border-white/5 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
-            <div className="p-4 md:p-5 border-b border-white/10 flex justify-between items-center bg-slate-900/60 backdrop-blur-md shrink-0">
+            {/* Desktop Only Sidebar Header */}
+            <div className="hidden md:flex p-5 border-b border-white/10 justify-between items-center bg-slate-900/40 backdrop-blur-md shrink-0">
               <div>
-                <h1 className="text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Vecto</h1>
-                <p className="text-[11px] md:text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
+                <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Vecto</h1>
+                <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
               </div>
               <div className="flex items-center space-x-2">
                 <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
@@ -136,32 +176,6 @@ function App() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Floating View Switcher Segmented Control Pill in Header on Mobile */}
-        <div className="md:hidden fixed top-3.5 left-1/2 -translate-x-1/2 z-50 flex items-center bg-slate-950/90 backdrop-blur-2xl border border-white/20 p-1 rounded-full shadow-[0_4px_25px_rgba(0,0,0,0.6)] space-x-1 ring-1 ring-white/10">
-          <button 
-            onClick={() => setMobileViewAndResize('map')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-300 flex items-center space-x-1.5 ${
-              mobileView === 'map' 
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-[0_0_15px_rgba(14,165,233,0.6)] scale-[1.03]' 
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Map size={14} className={mobileView === 'map' ? 'text-white' : 'text-slate-400'} />
-            <span>Map</span>
-          </button>
-          <button 
-            onClick={() => setMobileViewAndResize('sidebar')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-300 flex items-center space-x-1.5 ${
-              mobileView === 'sidebar' 
-                ? 'bg-gradient-to-r from-teal-500 to-emerald-600 text-white shadow-[0_0_15px_rgba(20,184,166,0.6)] scale-[1.03]' 
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            {selectedJobId ? <FileText size={14} className={mobileView === 'sidebar' ? 'text-white' : 'text-slate-400'} /> : <List size={14} className={mobileView === 'sidebar' ? 'text-white' : 'text-slate-400'} />}
-            <span>{selectedJobId ? 'Job Info' : 'List'}</span>
-          </button>
         </div>
         
         {/* Modals */}

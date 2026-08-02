@@ -114,7 +114,7 @@ export function useCompany() {
       if (d.exists()) {
         setCompany(id, d.data().name, false); // isDispatch will be updated by member listener
         
-        // Self-healing: ensure member document exists for current user
+        // Self-healing: ensure member document exists for current user and user's companies array contains id
         if (currentUser?.id) {
            const memberRef = doc(db, `companies/${id}/members/${currentUser.id}`);
            const memberDoc = await getDoc(memberRef);
@@ -129,6 +129,13 @@ export function useCompany() {
                     : { canCreateJob: false, canDeleteJob: false, canManageDrivers: false }
                });
            }
+           const userComps = currentUser.companies || [];
+           if (!userComps.includes(id)) {
+             await updateDoc(doc(db, 'users', currentUser.id), { companies: arrayUnion(id) }).catch(console.warn);
+             useAppStore.setState(state => ({
+               currentUser: { ...state.currentUser, companies: [...userComps, id] }
+             }));
+           }
         }
       } else {
         console.warn(`Company ${id} not found, removing from user profile.`);
@@ -136,7 +143,7 @@ export function useCompany() {
         useAppStore.setState(state => ({
           currentUser: { 
             ...state.currentUser, 
-            companies: state.currentUser.companies.filter(c => c !== id) 
+            companies: (state.currentUser?.companies || []).filter(c => c !== id) 
           }
         }));
       }
@@ -146,7 +153,8 @@ export function useCompany() {
   };
 
   const joinCompany = async (id, password = null) => {
-    if (currentUser.companies.includes(id)) {
+    const userComps = currentUser?.companies || [];
+    if (userComps.includes(id)) {
       loadCompany(id);
       return { success: true };
     }
@@ -167,7 +175,7 @@ export function useCompany() {
     });
     
     useAppStore.setState(state => ({
-      currentUser: { ...state.currentUser, companies: [...state.currentUser.companies, id] }
+      currentUser: { ...state.currentUser, companies: [...userComps, id] }
     }));
     loadCompany(id);
     return { success: true };

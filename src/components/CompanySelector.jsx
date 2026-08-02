@@ -4,7 +4,7 @@ import { useToastStore } from '../store/useToastStore';
 import { useCompany, useAuth } from '../hooks/useFirebase';
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { LogOut, Building2, CheckCircle2, ShieldAlert, PlusCircle, Users, Radio } from 'lucide-react';
+import { LogOut, Building2, CheckCircle2, ShieldAlert, PlusCircle, Users, Radio, RefreshCw } from 'lucide-react';
 
 export default function CompanySelector() {
   const currentUser = useAppStore(state => state.currentUser);
@@ -24,16 +24,17 @@ export default function CompanySelector() {
   useEffect(() => {
     // Auto-load last used company on initial load if user hasn't explicitly clicked "Change Company"
     const hasCleared = sessionStorage.getItem('vecto_has_cleared_company');
-    if (!currentCompanyId && currentUser?.companies?.length > 0 && !hasCleared) {
+    const userComps = currentUser?.companies || [];
+    if (!currentCompanyId && userComps.length > 0 && !hasCleared) {
       const lastCompanyId = localStorage.getItem('vecto_last_company_id');
-      const targetId = (lastCompanyId && currentUser.companies.includes(lastCompanyId)) 
+      const targetId = (lastCompanyId && userComps.includes(lastCompanyId)) 
         ? lastCompanyId 
-        : currentUser.companies[0];
+        : userComps[0];
       loadCompany(targetId);
-    } else {
-      fetchAllCompanies();
     }
-  }, [currentUser, currentCompanyId, loadCompany]);
+    // Always fetch companies list to ensure portal displays current options
+    fetchAllCompanies();
+  }, [currentUser?.id, currentCompanyId]);
 
   const fetchAllCompanies = async () => {
     setLoading(true);
@@ -42,6 +43,24 @@ export default function CompanySelector() {
       const comps = [];
       snap.forEach(d => comps.push({ id: d.id, ...d.data() }));
       setAllCompanies(comps);
+
+      if (currentUser?.id) {
+        const userComps = currentUser.companies || [];
+        const createdComps = comps.filter(c => c.createdBy === currentUser.id && !userComps.includes(c.id));
+        if (createdComps.length > 0) {
+          const newIds = createdComps.map(c => c.id);
+          const updatedComps = [...userComps, ...newIds];
+          updateDoc(doc(db, 'users', currentUser.id), { companies: arrayUnion(...newIds) }).catch(console.warn);
+          useAppStore.setState(state => ({
+            currentUser: { ...state.currentUser, companies: updatedComps }
+          }));
+        }
+
+        const joined = comps.filter(c => userComps.includes(c.id) || c.createdBy === currentUser.id || c.createdBy === currentUser.email);
+        if (joined.length === 0 && comps.length > 0) {
+          setActiveTab('join');
+        }
+      }
     } catch (e) {
       console.error("Error fetching companies:", e);
       addToast("Failed to fetch companies list: " + e.message, "error");
@@ -49,8 +68,14 @@ export default function CompanySelector() {
     setLoading(false);
   };
 
-  const joinedCompanies = allCompanies.filter(c => currentUser?.companies?.includes(c.id));
-  const availableCompanies = allCompanies.filter(c => !currentUser?.companies?.includes(c.id));
+  const isCompanyJoined = (c) => {
+    if (!currentUser) return false;
+    const userComps = currentUser.companies || [];
+    return userComps.includes(c.id) || c.createdBy === currentUser.id || c.createdBy === currentUser.email;
+  };
+
+  const joinedCompanies = allCompanies.filter(isCompanyJoined);
+  const availableCompanies = allCompanies.filter(c => !isCompanyJoined(c));
 
   const handleSelectJoined = async (companyId) => {
     try {
@@ -120,12 +145,22 @@ export default function CompanySelector() {
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">Manage and switch your fleet workspaces</p>
           </div>
-          <button 
-            onClick={logout} 
-            className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 text-xs font-semibold flex items-center transition-colors cursor-pointer"
-          >
-             <LogOut size={14} className="mr-1.5" /> Logout
-          </button>
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={fetchAllCompanies} 
+              disabled={loading}
+              className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 text-xs font-semibold flex items-center transition-colors cursor-pointer disabled:opacity-50"
+              title="Refresh Fleets List"
+            >
+               <RefreshCw size={14} className={`mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </button>
+            <button 
+              onClick={logout} 
+              className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 text-xs font-semibold flex items-center transition-colors cursor-pointer"
+            >
+               <LogOut size={14} className="mr-1.5" /> Logout
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation Header */}

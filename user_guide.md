@@ -1,4 +1,5 @@
 # VECTO User Guide 🧭
+**Author:** Wolfe.BT@TangentLLC.net
 
 Welcome to VECTO! This guide will walk you through the app's interface and core features so you can effectively track routes, manage jobs, and communicate with your team.
 

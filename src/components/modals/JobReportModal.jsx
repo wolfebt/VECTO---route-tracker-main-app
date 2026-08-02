@@ -82,8 +82,10 @@ export default function JobReportModal() {
         <div className="p-8 overflow-y-auto flex-1 print:p-0 print:overflow-visible">
             
             <div className="text-center border-b-2 border-gray-800 pb-4 mb-6">
-                <h1 className="text-3xl font-extrabold uppercase tracking-wider">{job.jobName || 'Unnamed Job'}</h1>
-                <p className="text-gray-500 font-medium">Job Report - {job.jobDate || new Date().toLocaleDateString()}</p>
+                <h1 className="text-4xl font-extrabold uppercase tracking-wider text-gray-900 mb-1">VECTO</h1>
+                <p className="text-xs text-gray-500 font-medium mb-3">Author: Wolfe.BT@TangentLLC.net</p>
+                <h2 className="text-2xl font-bold uppercase tracking-wide text-gray-800">{job.jobName || 'Unnamed Job'}</h2>
+                <p className="text-gray-500 font-medium text-sm">Job Report - {job.jobDate || new Date().toLocaleDateString()}</p>
             </div>
 
             {/* Section 1: General Info */}

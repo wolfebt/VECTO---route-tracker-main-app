@@ -1,4 +1,5 @@
 # Welcome to VECTO Route Tracker! 🚀
+**Author:** Wolfe.BT@TangentLLC.net
 
 Welcome to the **VECTO Route Tracker** project! This guide will help you get up to speed with the project's architecture, technology stack, and local development setup.
 

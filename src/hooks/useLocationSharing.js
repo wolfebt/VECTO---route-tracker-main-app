@@ -66,8 +66,11 @@ export function useLocationSharing() {
     }
   }, [currentUser, companyId, selectedJobId]);
 
+  const isDispatchView = useAppStore(state => state.isDispatchView);
+
   useEffect(() => {
-    if (isSharingLocation && currentUser && companyId) {
+    // Dispatchers do not show pins or share location
+    if (isSharingLocation && currentUser && companyId && !isDispatchView) {
       if (Capacitor.isNativePlatform()) {
         // --- NATIVE BACKGROUND TRACKING ---
         BackgroundGeolocation.addWatcher(
@@ -156,7 +159,7 @@ export function useLocationSharing() {
         }
       }
     };
-  }, [isSharingLocation, currentUser, companyId, setIsSharingLocation, updateDriverLocation]);
+  }, [isSharingLocation, currentUser, companyId, isDispatchView, setIsSharingLocation, updateDriverLocation]);
 
   const toggleLocationSharing = () => {
     setIsSharingLocation(!isSharingLocation);

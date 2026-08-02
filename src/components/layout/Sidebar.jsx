@@ -1,21 +1,59 @@
 import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
+import { useToastStore } from '../../store/useToastStore';
 import JobsList from '../jobs/JobsList';
 import DriversList from '../jobs/DriversList';
-import { QrCode } from 'lucide-react';
+import { QrCode, Share2 } from 'lucide-react';
 
 export default function Sidebar() {
   const isDispatchView = useAppStore(state => state.isDispatchView);
   const activeJobTab = useAppStore(state => state.activeJobTab);
   const setActiveJobTab = useAppStore(state => state.setActiveJobTab);
   const companyName = useAppStore(state => state.companyName);
+  const companyId = useAppStore(state => state.companyId);
+  const selectedJobId = useAppStore(state => state.selectedJobId);
   const openModal = useAppStore(state => state.openModal);
+  const addToast = useToastStore((state) => state.addToast);
+
+  const handleShareTeamMap = async () => {
+    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    let shareUrl = `${baseUrl}?company=${companyId || ''}`;
+    if (selectedJobId) {
+      shareUrl += `&job=${selectedJobId}`;
+    }
+
+    const shareData = {
+      title: 'Vecto Route Tracker - Team Map & Job',
+      text: selectedJobId ? 'View live team map & job pins on Vecto' : 'View live team map & driver pins on Vecto',
+      url: shareUrl
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        addToast("Team map & job link shared!", "success");
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn("Share error:", err);
+        } else return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      addToast("Team map & job link copied to clipboard!", "success");
+    } catch (err) {
+      console.error(err);
+      addToast("Failed to copy link.", "error");
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-slate-900/50 backdrop-blur-md">
       <div className="mb-6 p-4">
         <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-3">Company Workspace</h2>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-6 gap-2">
           <div 
             onClick={() => openModal('companySettings')}
             role="button"
@@ -29,9 +67,18 @@ export default function Sidebar() {
             <span className="text-xs uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-2 py-1 rounded shrink-0">Settings</span>
           </div>
           <button 
+            onClick={handleShareTeamMap}
+            className="col-span-1 bg-sky-600/20 border border-sky-500/30 text-sky-400 hover:bg-sky-600/30 rounded-xl flex items-center justify-center transition-colors"
+            title="Share Team Map & Job Link"
+            aria-label="Share Team Map & Job Link"
+          >
+            <Share2 size={18} />
+          </button>
+          <button 
             onClick={() => openModal('invite')}
             className="col-span-1 bg-teal-600/20 border border-teal-500/30 text-teal-400 hover:bg-teal-600/30 rounded-xl flex items-center justify-center transition-colors"
             title="Invite & Onboard Team (QR Code)"
+            aria-label="Invite & Onboard Team (QR Code)"
           >
             <QrCode size={18} />
           </button>

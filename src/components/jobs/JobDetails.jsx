@@ -20,7 +20,8 @@ import {
   Archive, 
   Trash2, 
   MessageSquare,
-  MessageSquarePlus 
+  MessageSquarePlus,
+  Share2
 } from 'lucide-react';
 
 export default function JobDetails({ onClose }) {
@@ -178,6 +179,37 @@ export default function JobDetails({ onClose }) {
     return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${routeInfo.destinationCoords.lat},${routeInfo.destinationCoords.lng}`;
   };
 
+  const handleShareJob = async () => {
+    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    const shareUrl = `${baseUrl}?company=${companyId || ''}&job=${selectedJobId}`;
+
+    const shareData = {
+      title: `Vecto Job: ${job.jobName || 'Selected Job'}`,
+      text: `View live team map and pins for job "${job.jobName || 'Selected Job'}" on Vecto`,
+      url: shareUrl
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        addToast("Job & live map link shared!", "success");
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn("Share error:", err);
+        } else return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      addToast("Job & live map link copied to clipboard!", "success");
+    } catch (err) {
+      console.error(err);
+      addToast("Failed to copy link.", "error");
+    }
+  };
+
   return (
     <div className="relative md:absolute right-0 top-0 bottom-0 w-full h-full max-w-full md:max-w-md md:w-80 lg:w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-30 shadow-2xl transition-transform duration-300">
       
@@ -227,6 +259,13 @@ export default function JobDetails({ onClose }) {
                  <span className="mr-1">📸</span> Street View
               </a>
             )}
+            <button 
+              onClick={handleShareJob}
+              className="flex-1 bg-sky-600/20 text-sky-400 border border-sky-500/30 hover:bg-sky-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors"
+              title="Share Job & Live Pins Link"
+            >
+              <Share2 size={13} className="mr-1" /> Share
+            </button>
         </div>
         {job.note && <p className="text-gray-400 p-2 bg-gray-800 rounded italic text-xs mt-2">{job.note}</p>}
         <div className="text-gray-400 mt-2">

@@ -69,24 +69,13 @@ function DriverMarkers() {
 
   const visibleDrivers = useMemo(() => {
     const fiveMinAgo = Date.now() - (5 * 60 * 1000);
-    const active = drivers.filter(d => {
+    return drivers.filter(d => {
+        if (d.id === currentUser?.id) return false;
         if (!d.timestamp) return true;
         if (typeof d.timestamp.toMillis !== 'function') return true;
         return d.timestamp.toMillis() > fiveMinAgo;
     });
-
-    if (isDispatchView) {
-      return active;
-    }
-
-    const myJobs = jobs.filter(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === currentUser?.id));
-    const myTeammates = new Set();
-    myJobs.forEach(j => {
-        j.assignedDrivers?.forEach(d => myTeammates.add(d.id));
-    });
-
-    return active.filter(d => d.id === currentUser?.id || myTeammates.has(d.id));
-  }, [drivers, jobs, isDispatchView, currentUser?.id]);
+  }, [drivers, currentUser?.id]);
 
   return (
     <>
@@ -183,6 +172,51 @@ function MapController() {
   return null;
 }
 
+function MyLocationMarker() {
+  const [location, setLocation] = useState(null);
+  const currentUser = useAppStore(state => state.currentUser);
+  const isDispatchView = useAppStore(state => state.isDispatchView);
+  
+  useEffect(() => {
+    if (isDispatchView || !navigator.geolocation) return;
+    
+    // Get initial
+    navigator.geolocation.getCurrentPosition(
+      pos => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true }
+    );
+    
+    // Watch
+    const watchId = navigator.geolocation.watchPosition(
+      pos => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 0 }
+    );
+    
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [isDispatchView]);
+
+  if (!location || !currentUser || isDispatchView) return null;
+
+  const pinColor = currentUser.color || '#22c55e';
+
+  return (
+    <AdvancedMarker 
+       position={location}
+       zIndex={1001}
+       title="My Location"
+    >
+       <div className="flex flex-col items-center hover:scale-110 transition-transform origin-bottom relative">
+           <Pin background={pinColor} borderColor="#166534" glyphColor="#ffffff" scale={1.2} />
+           <div className="absolute top-full mt-0.5 px-1.5 py-0.5 bg-gray-900/90 backdrop-blur-sm rounded text-[10px] text-gray-200 font-bold shadow-lg border border-gray-700/50 whitespace-nowrap z-10 pointer-events-none">
+              Me
+           </div>
+       </div>
+    </AdvancedMarker>
+  );
+}
+
 function TrafficOverlay() {
   const map = useMap();
   useEffect(() => {
@@ -224,6 +258,7 @@ export default function MapArea() {
         <TrafficOverlay />
         <DirectionsComponent />
         <DriverMarkers />
+        <MyLocationMarker />
       </Map>
       
       {/* My Location Button */}

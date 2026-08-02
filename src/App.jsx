@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppStore } from './store/useAppStore';
 import { useAuth, useCompany } from './hooks/useFirebase';
 import { useUrlOnboarding } from './hooks/useUrlOnboarding';
+import { useLocationSharing } from './hooks/useLocationSharing';
 import Auth from './components/Auth';
 import CompanySelector from './components/CompanySelector';
 import Sidebar from './components/layout/Sidebar';
@@ -137,6 +138,9 @@ function App() {
 
   // Process QR code & URL parameters for company/job onboarding
   useUrlOnboarding();
+
+  // Automatically start location sharing when app is up
+  useLocationSharing();
 
   const splashScreen = showSplash ? (
     <div className={`fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b0f19] transition-opacity duration-500 ease-in-out ${fadeSplash ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>

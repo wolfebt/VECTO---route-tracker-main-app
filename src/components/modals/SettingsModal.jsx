@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuth } from '../../hooks/useFirebase';
-import { LogOut, User, BookOpen, Cpu, Code2, Shield } from 'lucide-react';
+import { LogOut, User, Map, BookOpen, Cpu, Code2, Shield } from 'lucide-react';
 
 export default function SettingsModal() {
   const { modals, closeModal, openModal, isDispatchView } = useAppStore();
@@ -34,6 +34,14 @@ export default function SettingsModal() {
             <div className="flex items-center space-x-3">
               <User size={18} className="text-gray-400 group-hover:text-primary-400 transition-colors" />
               <span>Edit Profile</span>
+            </div>
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+          </button>
+
+          <button onClick={() => { handleClose(); openModal('mapSettings'); }} className="w-full btn-secondary py-3 px-4 flex justify-between items-center group cursor-pointer">
+            <div className="flex items-center space-x-3">
+              <Map size={18} className="text-gray-400 group-hover:text-primary-400 transition-colors" />
+              <span>Map & Route Settings</span>
             </div>
             <span className="opacity-0 group-hover:opacity-100 transition-opacity">→</span>
           </button>

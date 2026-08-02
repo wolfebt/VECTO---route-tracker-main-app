@@ -59,6 +59,7 @@ export const useAppStore = create((set) => ({
     company: false,
     companyPassword: null, // Holds companyId if asking for password, else null
     settings: false,
+    mapSettings: false,
     profile: false,
     userGuide: false,
     technicals: false,

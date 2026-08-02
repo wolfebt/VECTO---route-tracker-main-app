@@ -3,7 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { User, Phone, Palette, Check, Sparkles } from 'lucide-react';
+import { User, Phone, Palette, Check } from 'lucide-react';
 
 const PRESET_COLORS = [
   '#22c55e', // Emerald Green
@@ -143,7 +143,7 @@ export default function ProfileModal() {
           </button>
         </div>
 
-        {/* Live Profile Map Pin Preview */}
+        {/* Live Profile Driver Details */}
         <div className="bg-slate-900/60 p-3.5 rounded-xl border border-white/5 mb-5 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div 
@@ -159,11 +159,6 @@ export default function ProfileModal() {
                 {phone || 'No phone number added'}
               </span>
             </div>
-          </div>
-          <div className="text-right">
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/10 text-cyan-300 bg-cyan-500/10 flex items-center gap-1">
-              <Sparkles size={10} /> Map Preview
-            </span>
           </div>
         </div>
 

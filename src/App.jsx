@@ -9,6 +9,7 @@ import Sidebar from './components/layout/Sidebar';
 import MapArea from './components/layout/MapArea';
 import JobDetails from './components/jobs/JobDetails';
 import SettingsModal from './components/modals/SettingsModal';
+import MapSettingsModal from './components/modals/MapSettingsModal';
 import CreateJobModal from './components/modals/CreateJobModal';
 import AdminSettingsModal from './components/modals/AdminSettingsModal';
 import CompanySettingsModal from './components/modals/CompanySettingsModal';
@@ -287,6 +288,7 @@ function App() {
         
         {/* Modals */}
         <SettingsModal />
+        <MapSettingsModal />
         <CreateJobModal />
         <AdminSettingsModal />
         <CompanySettingsModal />

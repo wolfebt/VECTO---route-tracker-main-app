@@ -114,16 +114,19 @@ export function useCompany() {
       if (d.exists()) {
         setCompany(id, d.data().name, false); // isDispatch will be updated by member listener
         
-        // Self-healing from original code
-        if (d.data().createdBy === currentUser.id) {
+        // Self-healing: ensure member document exists for current user
+        if (currentUser?.id) {
            const memberRef = doc(db, `companies/${id}/members/${currentUser.id}`);
            const memberDoc = await getDoc(memberRef);
            if (!memberDoc.exists()) {
+               const isCreator = d.data().createdBy === currentUser.id;
                await setDoc(memberRef, {
                   email: currentUser.email,
                   name: currentUser.name,
                   joinedAt: serverTimestamp(),
-                  permissions: { canCreateJob: true, canDeleteJob: true, canManageDrivers: true }
+                  permissions: isCreator 
+                    ? { canCreateJob: true, canDeleteJob: true, canManageDrivers: true }
+                    : { canCreateJob: false, canDeleteJob: false, canManageDrivers: false }
                });
            }
         }

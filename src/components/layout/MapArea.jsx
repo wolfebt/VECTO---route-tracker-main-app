@@ -227,7 +227,7 @@ export default function MapArea() {
         gestureHandling={'greedy'}
         disableDefaultUI={false}
         mapId="vecto-main-map"
-        styles={mapStyles}
+        colorScheme="DARK"
       >
         <MapController />
         <TrafficOverlay />

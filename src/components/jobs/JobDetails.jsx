@@ -51,7 +51,7 @@ export default function JobDetails({ onClose }) {
 
   // Chat listener
   useEffect(() => {
-    if (!selectedJobId || !companyId) {
+    if (!selectedJobId || !companyId || !currentUser?.id) {
       setMessages([]);
       return;
     }
@@ -62,10 +62,12 @@ export default function JobDetails({ onClose }) {
       msgs.sort((a,b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
       setMessages(msgs);
     }, (error) => {
-      console.warn("Job chat snapshot listener error:", error);
+      if (error.code !== 'permission-denied') {
+        console.warn("Job chat snapshot listener error:", error);
+      }
     });
     return unsub;
-  }, [selectedJobId, companyId]);
+  }, [selectedJobId, companyId, currentUser?.id]);
 
   if (!selectedJobId) return null;
   if (!job) {
@@ -190,7 +192,7 @@ export default function JobDetails({ onClose }) {
   };
 
   return (
-    <div className="absolute right-0 top-0 bottom-0 w-full max-w-full md:max-w-md md:w-80 lg:w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-30 shadow-2xl transition-transform duration-300">
+    <div className="relative md:absolute right-0 top-0 bottom-0 w-full h-full max-w-full md:max-w-md md:w-80 lg:w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-30 shadow-2xl transition-transform duration-300">
       
       {/* Header */}
       <div className="p-4 border-b border-gray-800 flex justify-between items-start shrink-0">

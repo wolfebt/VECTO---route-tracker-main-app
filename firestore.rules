@@ -12,8 +12,10 @@ service cloud.firestore {
     }
 
     function isCompanyMember(companyId) {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid));
+      return isAuthenticated() && (
+        exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/companies/$(companyId)).data.createdBy == request.auth.uid
+      );
     }
 
     function getMemberData(companyId) {
@@ -22,9 +24,14 @@ service cloud.firestore {
 
     function isDispatcher(companyId) {
       return isCompanyMember(companyId) && (
-        getMemberData(companyId).permissions.canCreateJob == true ||
-        getMemberData(companyId).permissions.canManageDrivers == true ||
-        request.auth.token.email.toLowerCase() == 'btw.284@gmail.com'
+        get(/databases/$(database)/documents/companies/$(companyId)).data.createdBy == request.auth.uid ||
+        request.auth.token.email.toLowerCase() == 'btw.284@gmail.com' ||
+        (
+          exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) && (
+            getMemberData(companyId).permissions.canCreateJob == true ||
+            getMemberData(companyId).permissions.canManageDrivers == true
+          )
+        )
       );
     }
 

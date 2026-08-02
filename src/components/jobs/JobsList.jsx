@@ -12,7 +12,7 @@ export default function JobsList() {
 
   const handleSelectJob = (id) => {
     setSelectedJobId(id);
-    setMobileView('map');
+    setMobileView('sidebar');
   };
 
   const isArchived = activeJobTab === 'archive';

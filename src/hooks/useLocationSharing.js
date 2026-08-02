@@ -38,9 +38,14 @@ export function useLocationSharing() {
     };
   }, []);
 
+  const setCurrentLocation = useAppStore(state => state.setCurrentLocation);
+
   // Helper to send or queue driver location
   const updateDriverLocation = useCallback(async (lat, lng) => {
     if (!currentUser || !companyId) return;
+
+    // Update global app state live location for pin and route tracking
+    setCurrentLocation({ lat, lng });
 
     const geohashStr = encodeGeohash(lat, lng, 7);
     const payload = {
@@ -66,7 +71,7 @@ export function useLocationSharing() {
       console.warn("Location setDoc failed, saving to offline queue:", err);
       await saveOfflineFix(companyId, currentUser.id, payload);
     }
-  }, [currentUser, companyId, selectedJobId]);
+  }, [currentUser, companyId, selectedJobId, setCurrentLocation]);
 
   const isDispatchView = useAppStore(state => state.isDispatchView);
 
@@ -114,7 +119,7 @@ export function useLocationSharing() {
             await updateDriverLocation(latitude, longitude);
           },
           (err) => console.warn("Quick location fetch failed:", err),
-          { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
         );
 
         watchIdRef.current = navigator.geolocation.watchPosition(
@@ -133,9 +138,10 @@ export function useLocationSharing() {
               useToastStore.getState().addToast("Failed to acquire location signal.", "error");
             }
           },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
         );
       }
+
     } else {
       // --- STOP SHARING ---
       if (Capacitor.isNativePlatform()) {

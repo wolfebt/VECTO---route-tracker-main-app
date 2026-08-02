@@ -54,6 +54,9 @@ export const useAppStore = create((set) => ({
   isSharingLocation: true,
   setIsSharingLocation: (isSharing) => set({ isSharingLocation: isSharing }),
 
+  currentLocation: null, // { lat, lng } live driver location
+  setCurrentLocation: (location) => set({ currentLocation: location }),
+
   // Modals & UI State
   modals: {
     company: false,

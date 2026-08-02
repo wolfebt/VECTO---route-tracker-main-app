@@ -177,31 +177,56 @@ function MapController() {
 }
 
 function MyLocationMarker() {
-  const [location, setLocation] = useState(null);
+  const [localLocation, setLocalLocation] = useState(null);
   const currentUser = useAppStore(state => state.currentUser);
   const isDispatchView = useAppStore(state => state.isDispatchView);
+  const storeLocation = useAppStore(state => state.currentLocation);
+  const setCurrentLocation = useAppStore(state => state.setCurrentLocation);
+  const drivers = useActiveDrivers();
   
   useEffect(() => {
     if (isDispatchView || !navigator.geolocation) return;
     
-    // Get initial
+    // Get initial fix
     navigator.geolocation.getCurrentPosition(
-      pos => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      pos => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLocalLocation(loc);
+        setCurrentLocation(loc);
+      },
       () => {},
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
     );
     
-    // Watch
+    // Watch continuous location
     const watchId = navigator.geolocation.watchPosition(
-      pos => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 0 }
+      pos => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLocalLocation(loc);
+        setCurrentLocation(loc);
+      },
+      (err) => console.warn("MyLocationMarker signal issue:", err),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
     );
     
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [isDispatchView]);
+  }, [isDispatchView, setCurrentLocation]);
 
-  if (!location || !currentUser || isDispatchView) return null;
+  if (!currentUser || isDispatchView) return null;
+
+  // Multi-level fallback to ensure tracking pin is never lost:
+  // 1. Store live location (from GPS or Capacitor native plugin)
+  // 2. Local browser GPS location
+  // 3. Firestore active_drivers record for currentUser
+  let location = storeLocation || localLocation;
+  if (!location && currentUser) {
+    const myDriverDoc = drivers.find(d => d.id === currentUser.id);
+    if (myDriverDoc?.location?.latitude && myDriverDoc?.location?.longitude) {
+      location = { lat: myDriverDoc.location.latitude, lng: myDriverDoc.location.longitude };
+    }
+  }
+
+  if (!location) return null;
 
   const pinColor = currentUser.color || '#22c55e';
 
@@ -240,6 +265,7 @@ export default function MapArea() {
 
   const routeInfo = useAppStore(state => state.routeInfo);
   const routeStyle = useAppStore(state => state.routeStyle);
+  const currentLocation = useAppStore(state => state.currentLocation);
 
   if (!apiKey) {
     return (
@@ -273,6 +299,7 @@ export default function MapArea() {
             routeColor={routeInfo.routeColor}
             routeStyle={routeStyle}
             jobId={routeInfo.jobId}
+            driverLocation={currentLocation}
           />
         )}
         <DriverMarkers />

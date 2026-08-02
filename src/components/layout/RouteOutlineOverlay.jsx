@@ -1,6 +1,86 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { useMap } from '@vis.gl/react-google-maps';
+
+function getSqDist(p1, p2) {
+  const dx = p1.lat - p2.lat;
+  const dy = p1.lng - p2.lng;
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Splits a route path array into travelledPath (solid line) and ongoingPath (dashed line)
+ * based on the driver's current position.
+ */
+export function splitPathAtLocation(path, driverLocation) {
+  if (!path || path.length < 2) {
+    return { travelledPath: [], ongoingPath: path || [] };
+  }
+
+  const normalizedPath = path.map(pt => ({
+    lat: typeof pt.lat === 'function' ? pt.lat() : Number(pt.lat),
+    lng: typeof pt.lng === 'function' ? pt.lng() : Number(pt.lng)
+  })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng));
+
+  if (normalizedPath.length < 2) {
+    return { travelledPath: [], ongoingPath: normalizedPath };
+  }
+
+  if (!driverLocation || typeof driverLocation.lat !== 'number' || typeof driverLocation.lng !== 'number') {
+    return { travelledPath: [], ongoingPath: normalizedPath };
+  }
+
+  const dLat = Number(driverLocation.lat);
+  const dLng = Number(driverLocation.lng);
+  if (isNaN(dLat) || isNaN(dLng)) {
+    return { travelledPath: [], ongoingPath: normalizedPath };
+  }
+
+  let minSqDist = Infinity;
+  let bestIndex = 0;
+  let closestPoint = null;
+
+  for (let i = 0; i < normalizedPath.length - 1; i++) {
+    const p1 = normalizedPath[i];
+    const p2 = normalizedPath[i + 1];
+
+    const dx = p2.lat - p1.lat;
+    const dy = p2.lng - p1.lng;
+    const lenSq = dx * dx + dy * dy;
+
+    let t = 0;
+    if (lenSq > 0) {
+      t = ((dLat - p1.lat) * dx + (dLng - p1.lng) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+    }
+
+    const proj = { lat: p1.lat + t * dx, lng: p1.lng + t * dy };
+    const sqDist = getSqDist({ lat: dLat, lng: dLng }, proj);
+
+    if (sqDist < minSqDist) {
+      minSqDist = sqDist;
+      bestIndex = i;
+      closestPoint = proj;
+    }
+  }
+
+  // If driver is unreasonably far from the route (> ~15km), don't split
+  if (minSqDist > 0.02) {
+    return { travelledPath: [], ongoingPath: normalizedPath };
+  }
+
+  const travelledPath = [
+    ...normalizedPath.slice(0, bestIndex + 1),
+    closestPoint
+  ];
+
+  const ongoingPath = [
+    closestPoint,
+    ...normalizedPath.slice(bestIndex + 1)
+  ];
+
+  return { travelledPath, ongoingPath };
+}
 
 function convertPathToSvgD(latLngArray, projection) {
   if (!latLngArray || !projection || latLngArray.length < 2) return '';
@@ -19,11 +99,152 @@ function PortalToDiv({ targetDiv, children }) {
   return ReactDOM.createPortal(children, targetDiv);
 }
 
-export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColor = '#3b82f6', routeStyle = 'outlined', jobId = 'default' }) {
+// Native Google Maps Polylines for guaranteed 100% mobile compatibility
+function NativeRoutePolylines({ map, travelledPath, ongoingPath, routeColor }) {
+  const travelledPolylineRef = useRef(null);
+  const travelledShadowRef = useRef(null);
+  const ongoingPolylineRef = useRef(null);
+  const ongoingShadowRef = useRef(null);
+
+  useEffect(() => {
+    if (!map || !window.google?.maps) return;
+
+    // 1. Travelled Shadow
+    travelledShadowRef.current = new window.google.maps.Polyline({
+      map,
+      strokeColor: '#0f172a',
+      strokeOpacity: 0.5,
+      strokeWeight: 10,
+      zIndex: 2,
+      clickable: false
+    });
+
+    // 2. Travelled Solid Polyline
+    travelledPolylineRef.current = new window.google.maps.Polyline({
+      map,
+      strokeColor: routeColor || '#3b82f6',
+      strokeOpacity: 0.95,
+      strokeWeight: 6,
+      zIndex: 3,
+      clickable: false
+    });
+
+    // Dash symbol for ongoing route
+    const dashSymbol = {
+      path: 'M 0,-1 L 0,1',
+      strokeOpacity: 1,
+      strokeColor: routeColor || '#3b82f6',
+      scale: 4
+    };
+
+    // 3. Ongoing Dashed Polyline
+    ongoingPolylineRef.current = new window.google.maps.Polyline({
+      map,
+      strokeColor: routeColor || '#3b82f6',
+      strokeOpacity: 0,
+      icons: [{
+        icon: dashSymbol,
+        offset: '0',
+        repeat: '18px'
+      }],
+      strokeWeight: 5,
+      zIndex: 3,
+      clickable: false
+    });
+
+    // Shadow dash symbol
+    const shadowDashSymbol = {
+      path: 'M 0,-1 L 0,1',
+      strokeOpacity: 0.4,
+      strokeColor: '#0f172a',
+      scale: 6
+    };
+
+    // 4. Ongoing Shadow Polyline
+    ongoingShadowRef.current = new window.google.maps.Polyline({
+      map,
+      strokeColor: '#0f172a',
+      strokeOpacity: 0,
+      icons: [{
+        icon: shadowDashSymbol,
+        offset: '0',
+        repeat: '18px'
+      }],
+      strokeWeight: 8,
+      zIndex: 2,
+      clickable: false
+    });
+
+    return () => {
+      if (travelledShadowRef.current) travelledShadowRef.current.setMap(null);
+      if (travelledPolylineRef.current) travelledPolylineRef.current.setMap(null);
+      if (ongoingShadowRef.current) ongoingShadowRef.current.setMap(null);
+      if (ongoingPolylineRef.current) ongoingPolylineRef.current.setMap(null);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (!map) return;
+
+    // Travelled Path -> Solid Line
+    if (travelledPath && travelledPath.length >= 2) {
+      travelledShadowRef.current?.setPath(travelledPath);
+      travelledShadowRef.current?.setVisible(true);
+
+      travelledPolylineRef.current?.setPath(travelledPath);
+      travelledPolylineRef.current?.setOptions({ strokeColor: routeColor || '#3b82f6' });
+      travelledPolylineRef.current?.setVisible(true);
+    } else {
+      travelledShadowRef.current?.setVisible(false);
+      travelledPolylineRef.current?.setVisible(false);
+    }
+
+    // Ongoing Path -> Dashed Line
+    if (ongoingPath && ongoingPath.length >= 2) {
+      const dashSymbol = {
+        path: 'M 0,-1 L 0,1',
+        strokeOpacity: 1,
+        strokeColor: routeColor || '#3b82f6',
+        scale: 4
+      };
+      const shadowDashSymbol = {
+        path: 'M 0,-1 L 0,1',
+        strokeOpacity: 0.4,
+        strokeColor: '#0f172a',
+        scale: 6
+      };
+
+      ongoingShadowRef.current?.setPath(ongoingPath);
+      ongoingShadowRef.current?.setOptions({
+        icons: [{ icon: shadowDashSymbol, offset: '0', repeat: '18px' }]
+      });
+      ongoingShadowRef.current?.setVisible(true);
+
+      ongoingPolylineRef.current?.setPath(ongoingPath);
+      ongoingPolylineRef.current?.setOptions({
+        strokeColor: routeColor || '#3b82f6',
+        icons: [{ icon: dashSymbol, offset: '0', repeat: '18px' }]
+      });
+      ongoingPolylineRef.current?.setVisible(true);
+    } else {
+      ongoingShadowRef.current?.setVisible(false);
+      ongoingPolylineRef.current?.setVisible(false);
+    }
+  }, [map, travelledPath, ongoingPath, routeColor]);
+
+  return null;
+}
+
+export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColor = '#3b82f6', routeStyle = 'outlined', jobId = 'default', driverLocation = null }) {
   const map = useMap();
   const overlayRef = useRef(null);
   const containerRef = useRef(null);
   const [, setTick] = useState(0);
+
+  // Split path into travelled (solid) and ongoing (dash)
+  const { travelledPath, ongoingPath } = useMemo(() => {
+    return splitPathAtLocation(path, driverLocation);
+  }, [path, driverLocation]);
 
   useEffect(() => {
     if (!map || !window.google?.maps?.OverlayView) return;
@@ -35,8 +256,6 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
         this.div.style.position = 'absolute';
         this.div.style.left = '0px';
         this.div.style.top = '0px';
-        this.div.style.width = '100%';
-        this.div.style.height = '100%';
         this.div.style.pointerEvents = 'none';
         this.div.style.overflow = 'visible';
         this.div.style.zIndex = '5';
@@ -50,6 +269,14 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
       }
 
       draw() {
+        const mapDiv = this.getMap()?.getDiv();
+        if (mapDiv) {
+          this.div.style.width = mapDiv.clientWidth + 'px';
+          this.div.style.height = mapDiv.clientHeight + 'px';
+        } else {
+          this.div.style.width = '100vw';
+          this.div.style.height = '100vh';
+        }
         setTick(t => t + 1);
       }
 
@@ -81,21 +308,16 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
     };
   }, [map]);
 
-  if (!map || !overlayRef.current || !path || path.length < 2) {
-    return null;
-  }
+  const projection = overlayRef.current?.getProjectionObj();
 
-  const projection = overlayRef.current.getProjectionObj();
-  if (!projection) return null;
-
-  const fullD = convertPathToSvgD(path, projection);
-  if (!fullD) return null;
+  const fullD = projection && path ? convertPathToSvgD(path, projection) : '';
+  const travelledD = projection && travelledPath ? convertPathToSvgD(travelledPath, projection) : '';
+  const ongoingD = projection && ongoingPath ? convertPathToSvgD(ongoingPath, projection) : '';
 
   const cleanJobId = (jobId || 'job').replace(/[^a-zA-Z0-9_-]/g, '_');
   const maskId = `route-hollow-mask-${cleanJobId}`;
 
-  // Process step segment SVG paths for traffic mode
-  const stepSegments = (stepTraffics && stepTraffics.length > 0)
+  const stepSegments = (stepTraffics && stepTraffics.length > 0 && projection)
     ? stepTraffics.map((step, idx) => ({
         key: idx,
         d: convertPathToSvgD(step.path, projection),
@@ -104,8 +326,17 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
     : [];
 
   return (
-    <div style={{ display: 'none' }}>
-      {containerRef.current && (
+    <>
+      {/* 1. Native Google Maps Polylines: Travelled = Solid, Ongoing = Dash */}
+      <NativeRoutePolylines
+        map={map}
+        travelledPath={travelledPath}
+        ongoingPath={ongoingPath}
+        routeColor={routeColor}
+      />
+
+      {/* 2. SVG Overlay for custom style effects (Outline, Alternating, Traffic) */}
+      {containerRef.current && projection && fullD && (
         <PortalToDiv targetDiv={containerRef.current}>
           <svg
             style={{
@@ -119,7 +350,6 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
             }}
           >
             <defs>
-              {/* CSS Animation keyframes for alternating color-to-transparent fade & flowing road dashes */}
               <style>{`
                 @keyframes vectoRouteFadePulse {
                   0%, 100% {
@@ -143,7 +373,6 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
                   animation: vectoRouteFadePulse 3s ease-in-out infinite, vectoRouteDashFlow 5s linear infinite;
                 }
               `}</style>
-              {/* Hollow mask: white keeps area, black erases center (transparent core showing map road) */}
               <mask id={maskId}>
                 <rect x="-20000" y="-20000" width="50000" height="50000" fill="white" />
                 <path
@@ -157,54 +386,38 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
               </mask>
             </defs>
 
-            {/* Alternating Fade Mode: Smooth pulse from chosen color to transparent road & back, with alternating color & road gaps */}
+            {/* Alternating Mode */}
             {routeStyle === 'alternating' && (
               <>
-                {/* Contrast shadow backdrop */}
-                <path
-                  d={fullD}
-                  stroke="#0f172a"
-                  strokeWidth="14"
-                  strokeOpacity="0.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                  strokeDasharray="32 20"
-                  className="vecto-alternating-fade"
-                />
-                {stepSegments.length > 0 ? (
-                  stepSegments.map(step => (
-                    <path
-                      key={step.key}
-                      d={step.d}
-                      stroke={step.color}
-                      strokeWidth="10"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                      strokeDasharray="32 20"
-                      className="vecto-alternating-fade"
-                    />
-                  ))
-                ) : (
+                {travelledD && (
                   <path
-                    d={fullD}
+                    d={travelledD}
                     stroke={routeColor}
-                    strokeWidth="10"
+                    strokeWidth="8"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     fill="none"
-                    strokeDasharray="32 20"
+                    strokeOpacity="0.95"
+                  />
+                )}
+                {ongoingD && (
+                  <path
+                    d={ongoingD}
+                    stroke={routeColor}
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                    strokeDasharray="24 16"
                     className="vecto-alternating-fade"
                   />
                 )}
               </>
             )}
 
-            {/* Outlined Mode: Chosen route color edge borders with transparent center */}
+            {/* Outlined Mode */}
             {routeStyle === 'outlined' && (
               <>
-                {/* Subtle outer contrast glow */}
                 <path
                   d={fullD}
                   stroke="#000000"
@@ -215,7 +428,6 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
                   fill="none"
                   mask={`url(#${maskId})`}
                 />
-                {/* Route Color Highlight Outline */}
                 <path
                   d={fullD}
                   stroke={routeColor}
@@ -229,10 +441,9 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
               </>
             )}
 
-            {/* Traffic Mode: Green, Orange, Red Road Condition Edge Outlines */}
+            {/* Traffic Mode */}
             {routeStyle === 'traffic' && (
               <>
-                {/* Contrast shadow behind traffic borders */}
                 <path
                   d={fullD}
                   stroke="#000000"
@@ -271,33 +482,9 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
                 )}
               </>
             )}
-
-            {/* Solid Mode: Classic solid polyline */}
-            {routeStyle === 'solid' && (
-              <>
-                <path
-                  d={fullD}
-                  stroke="#0f172a"
-                  strokeWidth="10"
-                  strokeOpacity="0.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-                <path
-                  d={fullD}
-                  stroke={routeColor}
-                  strokeWidth="6"
-                  strokeOpacity="0.95"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              </>
-            )}
           </svg>
         </PortalToDiv>
       )}
-    </div>
+    </>
   );
 }

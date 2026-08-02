@@ -49,6 +49,7 @@ export const useAppStore = create((set) => ({
     companySettings: false,
     createJob: false,
     jobReport: false,
+    logProgress: false,
     confirm: null, // Holds { message, onConfirm } or null
     stressTest: false, // Dashboard modal
   },

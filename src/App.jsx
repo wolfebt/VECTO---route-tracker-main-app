@@ -15,6 +15,7 @@ import ProfileModal from './components/modals/ProfileModal';
 import UserGuideModal from './components/modals/UserGuideModal';
 import InviteModal from './components/modals/InviteModal';
 import JobReportModal from './components/modals/JobReportModal';
+import LogProgressModal from './components/modals/LogProgressModal';
 import ToastContainer from './components/layout/ToastContainer';
 import { Settings, Map, List, FileText } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
@@ -192,6 +193,7 @@ function App() {
         <UserGuideModal />
         <InviteModal />
         <JobReportModal />
+        <LogProgressModal />
         <ToastContainer />
       </div>
     </APIProvider>

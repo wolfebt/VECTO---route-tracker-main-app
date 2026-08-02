@@ -5,7 +5,22 @@ import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
 import { db, storage } from '../../firebase';
 import { doc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp, query, onSnapshot, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { QrCode, FileText } from 'lucide-react';
+import { 
+  Briefcase, 
+  ShieldAlert, 
+  FileText, 
+  ChevronDown, 
+  UserPlus, 
+  UserMinus, 
+  QrCode, 
+  CheckCircle2, 
+  Pencil, 
+  Clock, 
+  Slash, 
+  Archive, 
+  Trash2, 
+  MessageSquarePlus 
+} from 'lucide-react';
 
 export default function JobDetails({ onClose }) {
   const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo, openModal } = useAppStore();
@@ -18,8 +33,7 @@ export default function JobDetails({ onClose }) {
   const [chatInput, setChatInput] = useState('');
   const [chatFile, setChatFile] = useState(null);
   const [sending, setSending] = useState(false);
-  const [noteInput, setNoteInput] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
+  const [activeDrawer, setActiveDrawer] = useState('JOB');
   
   const [weather, setWeather] = useState(null);
 
@@ -341,53 +355,187 @@ export default function JobDetails({ onClose }) {
             </div>
         )}
         
-        {/* Driver Notes Form */}
-        <form onSubmit={handleSaveNote} className="mt-4 bg-gray-800 p-2 rounded border border-gray-700">
-            <label className="text-xs font-bold text-gray-300 uppercase block mb-1">Log Progress Update</label>
-            <div className="flex space-x-2">
-                <input 
-                    type="text" 
-                    value={noteInput} 
-                    onChange={e => setNoteInput(e.target.value)} 
-                    placeholder="E.g., Arrived at first stop..."
-                    className="flex-1 bg-gray-700 text-white rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"
-                />
-                <button type="submit" disabled={savingNote || !noteInput.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs font-semibold disabled:opacity-50">Log</button>
-            </div>
-        </form>
-        
-        {/* Actions */}
-        <div className="grid grid-cols-2 gap-3 mt-4">
-           {canAssign && !isAssigned && <button onClick={() => updateStatus('in-progress', true)} className="bg-blue-600 hover:bg-blue-700 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Assign to Me</button>}
-           {canAssign && isAssigned && <button onClick={() => updateStatus('unassigned', false, true)} className="bg-red-600 hover:bg-red-700 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Unassign Me</button>}
-           {isAssigned && job.status !== 'pending-completion' && <button onClick={() => updateStatus('pending-completion')} className="bg-green-600 hover:bg-green-700 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Request Completion</button>}
-           
-           {isDispatchView && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
-             <>
-               <button onClick={() => updateStatus('completed')} className="bg-green-700 hover:bg-green-600 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Complete Job</button>
-               <button onClick={() => updateStatus('cancelled')} className="bg-orange-700 hover:bg-orange-600 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Cancel Job</button>
-             </>
-           )}
-           {isDispatchView && job.status !== 'archived' && <button onClick={() => updateStatus('archived')} className="bg-gray-700 hover:bg-gray-600 border border-gray-500 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Archive</button>}
-           {isDispatchView && job.status === 'archived' && <button onClick={() => updateStatus(job.previousStatus || 'completed')} className="bg-gray-600 hover:bg-gray-500 border border-gray-400 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Unarchive</button>}
-           {isDispatchView && <button onClick={() => openModal('createJob', { editMode: true, job })} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 mt-2 focus-visible:ring-2 focus-visible:ring-white">Edit Job</button>}
-           
-           <button 
-             onClick={() => openModal('jobReport', { jobId: job.id })} 
-             className="bg-sky-600 hover:bg-sky-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 flex items-center justify-center space-x-1.5 focus-visible:ring-2 focus-visible:ring-white"
-           >
-             <FileText size={16} />
-             <span>View Job Report</span>
-           </button>
-           
-            <button 
-              onClick={() => openModal('invite', { jobId: job.id, jobName: job.jobName })} 
-              className="bg-teal-600 hover:bg-teal-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 flex items-center justify-center space-x-1.5 focus-visible:ring-2 focus-visible:ring-white"
+        {/* Action Drawers: JOB, ADMIN, REPORT */}
+        <div className="mt-4 border border-gray-800 rounded-xl bg-slate-900/90 overflow-hidden shadow-lg">
+          {/* Header Buttons Bar */}
+          <div className="grid grid-cols-3 bg-slate-950 p-1 gap-1 border-b border-gray-800">
+            <button
+              onClick={() => setActiveDrawer(activeDrawer === 'JOB' ? null : 'JOB')}
+              className={`py-2.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 min-h-[44px] ${
+                activeDrawer === 'JOB'
+                  ? 'bg-blue-600/30 text-blue-400 border border-blue-500/50 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
+              }`}
             >
-              <QrCode size={16} />
-              <span>Invite / Onboard Driver (QR Code)</span>
+              <Briefcase size={15} />
+              <span>JOB</span>
+              <ChevronDown size={14} className={`transition-transform duration-200 ${activeDrawer === 'JOB' ? 'rotate-180 text-blue-400' : 'opacity-60'}`} />
             </button>
-           {isDispatchView && <button onClick={handleDelete} className="bg-red-900 hover:bg-red-800 text-red-200 rounded py-2 text-xs font-semibold shadow col-span-2 focus-visible:ring-2 focus-visible:ring-white">Delete Job</button>}
+
+            <button
+              onClick={() => setActiveDrawer(activeDrawer === 'ADMIN' ? null : 'ADMIN')}
+              className={`py-2.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 min-h-[44px] ${
+                activeDrawer === 'ADMIN'
+                  ? 'bg-purple-600/30 text-purple-400 border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.3)]'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <ShieldAlert size={15} />
+              <span>ADMIN</span>
+              <ChevronDown size={14} className={`transition-transform duration-200 ${activeDrawer === 'ADMIN' ? 'rotate-180 text-purple-400' : 'opacity-60'}`} />
+            </button>
+
+            <button
+              onClick={() => setActiveDrawer(activeDrawer === 'REPORT' ? null : 'REPORT')}
+              className={`py-2.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 min-h-[44px] ${
+                activeDrawer === 'REPORT'
+                  ? 'bg-teal-600/30 text-teal-400 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.3)]'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <FileText size={15} />
+              <span>REPORT</span>
+              <ChevronDown size={14} className={`transition-transform duration-200 ${activeDrawer === 'REPORT' ? 'rotate-180 text-teal-400' : 'opacity-60'}`} />
+            </button>
+          </div>
+
+          {/* Drawer Content Panel */}
+          {activeDrawer && (
+            <div className="p-3 bg-slate-900/80">
+              {/* JOB Drawer */}
+              {activeDrawer === 'JOB' && (
+                <div className="space-y-3">
+                  {canAssign && !isAssigned && (
+                    <button
+                      onClick={() => updateStatus('in-progress', true)}
+                      className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-blue-400"
+                    >
+                      <UserPlus size={16} />
+                      <span>Assign to Me</span>
+                    </button>
+                  )}
+
+                  {canAssign && isAssigned && (
+                    <button
+                      onClick={() => updateStatus('unassigned', false, true)}
+                      className="w-full bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-rose-400"
+                    >
+                      <UserMinus size={16} />
+                      <span>Unassign Me</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => openModal('invite', { jobId: job.id, jobName: job.jobName })}
+                    className="w-full bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-teal-400"
+                  >
+                    <QrCode size={16} />
+                    <span>Invite / Onboard Driver (QR Code)</span>
+                  </button>
+
+                  {isDispatchView && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
+                    <button
+                      onClick={() => updateStatus('completed')}
+                      className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-emerald-400"
+                    >
+                      <CheckCircle2 size={16} />
+                      <span>Complete Job</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* ADMIN Drawer */}
+              {activeDrawer === 'ADMIN' && (
+                <div className="space-y-3">
+                  {isDispatchView && (
+                    <button
+                      onClick={() => openModal('createJob', { editMode: true, job })}
+                      className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-indigo-400"
+                    >
+                      <Pencil size={16} />
+                      <span>Edit Job</span>
+                    </button>
+                  )}
+
+                  {isAssigned && job.status !== 'pending-completion' && (
+                    <button
+                      onClick={() => updateStatus('pending-completion')}
+                      className="w-full bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-green-400"
+                    >
+                      <Clock size={16} />
+                      <span>Request Completion</span>
+                    </button>
+                  )}
+
+                  {isDispatchView && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
+                    <button
+                      onClick={() => updateStatus('cancelled')}
+                      className="w-full bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-amber-400"
+                    >
+                      <Slash size={16} />
+                      <span>Cancel Job</span>
+                    </button>
+                  )}
+
+                  {isDispatchView && job.status !== 'archived' && (
+                    <button
+                      onClick={() => updateStatus('archived')}
+                      className="w-full bg-slate-700/40 hover:bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-slate-400"
+                    >
+                      <Archive size={16} />
+                      <span>Archive Job</span>
+                    </button>
+                  )}
+
+                  {isDispatchView && job.status === 'archived' && (
+                    <button
+                      onClick={() => updateStatus(job.previousStatus || 'completed')}
+                      className="w-full bg-slate-700/40 hover:bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-slate-400"
+                    >
+                      <Archive size={16} />
+                      <span>Unarchive Job</span>
+                    </button>
+                  )}
+
+                  {isDispatchView && (
+                    <button
+                      onClick={handleDelete}
+                      className="w-full bg-red-950/40 hover:bg-red-900/50 text-red-300 border border-red-700/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-red-400"
+                    >
+                      <Trash2 size={16} />
+                      <span>Delete Job</span>
+                    </button>
+                  )}
+
+                  {!isDispatchView && (!isAssigned || job.status === 'pending-completion') && (
+                    <p className="text-gray-500 text-xs italic text-center py-2">No admin actions available.</p>
+                  )}
+                </div>
+              )}
+
+              {/* REPORT Drawer */}
+              {activeDrawer === 'REPORT' && (
+                <div className="space-y-3">
+                  <button
+                    onClick={() => openModal('logProgress', { jobId: job.id, jobName: job.jobName })}
+                    className="w-full bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-cyan-400"
+                  >
+                    <MessageSquarePlus size={16} />
+                    <span>Log Progress Update</span>
+                  </button>
+
+                  <button
+                    onClick={() => openModal('jobReport', { jobId: job.id })}
+                    className="w-full bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-sky-400"
+                  >
+                    <FileText size={16} />
+                    <span>View Job Report</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

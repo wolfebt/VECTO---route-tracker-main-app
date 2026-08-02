@@ -70,7 +70,11 @@ export function useAuth() {
     return unsub;
   }, [setCurrentUser, setMapsApiKey, setFirebaseApiKey, setGeminiApiKey]);
 
-  const login = () => signInWithPopup(auth, new GoogleAuthProvider());
+  const login = () => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    return signInWithPopup(auth, provider);
+  };
   const logout = async () => {
     useAppStore.getState().triggerSplash();
     useAppStore.getState().clearCompany();

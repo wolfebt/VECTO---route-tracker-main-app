@@ -37,6 +37,13 @@ export default function JobDetails({ onClose }) {
   const [sending, setSending] = useState(false);
   const [activeDrawer, setActiveDrawer] = useState('JOB');
   
+  // Reset ADMIN drawer if user is in driver view
+  useEffect(() => {
+    if (!isDispatchView && activeDrawer === 'ADMIN') {
+      setActiveDrawer('JOB');
+    }
+  }, [isDispatchView, activeDrawer]);
+  
   // Chat listener
   useEffect(() => {
     if (!selectedJobId || !companyId || !currentUser?.id) {
@@ -327,10 +334,10 @@ export default function JobDetails({ onClose }) {
             </div>
         )}
         
-        {/* Action Drawers: JOB, ADMIN, REPORT, CHAT */}
+        {/* Action Drawers: JOB, ADMIN (dispatch only), REPORT, CHAT */}
         <div className="mt-4 border border-gray-800 rounded-xl bg-slate-900/90 overflow-hidden shadow-lg">
           {/* Header Buttons Bar */}
-          <div className="grid grid-cols-4 bg-slate-950 p-1 gap-1 border-b border-gray-800">
+          <div className={`grid ${isDispatchView ? 'grid-cols-4' : 'grid-cols-3'} bg-slate-950 p-1 gap-1 border-b border-gray-800`}>
             <button
               onClick={() => setActiveDrawer(activeDrawer === 'JOB' ? null : 'JOB')}
               className={`py-2.5 px-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center space-x-1 min-h-[44px] ${
@@ -344,18 +351,20 @@ export default function JobDetails({ onClose }) {
               <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'JOB' ? 'rotate-180 text-blue-400' : 'opacity-60'}`} />
             </button>
 
-            <button
-              onClick={() => setActiveDrawer(activeDrawer === 'ADMIN' ? null : 'ADMIN')}
-              className={`py-2.5 px-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center space-x-1 min-h-[44px] ${
-                activeDrawer === 'ADMIN'
-                  ? 'bg-purple-600/30 text-purple-400 border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.3)]'
-                  : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <ShieldAlert size={14} />
-              <span>ADMIN</span>
-              <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'ADMIN' ? 'rotate-180 text-purple-400' : 'opacity-60'}`} />
-            </button>
+            {isDispatchView && (
+              <button
+                onClick={() => setActiveDrawer(activeDrawer === 'ADMIN' ? null : 'ADMIN')}
+                className={`py-2.5 px-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center space-x-1 min-h-[44px] ${
+                  activeDrawer === 'ADMIN'
+                    ? 'bg-purple-600/30 text-purple-400 border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.3)]'
+                    : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <ShieldAlert size={14} />
+                <span>ADMIN</span>
+                <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'ADMIN' ? 'rotate-180 text-purple-400' : 'opacity-60'}`} />
+              </button>
+            )}
 
             <button
               onClick={() => setActiveDrawer(activeDrawer === 'REPORT' ? null : 'REPORT')}
@@ -415,6 +424,16 @@ export default function JobDetails({ onClose }) {
                     </button>
                   )}
 
+                  {isAssigned && job.status !== 'pending-completion' && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
+                    <button
+                      onClick={() => updateStatus('pending-completion')}
+                      className="w-full bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-green-400"
+                    >
+                      <Clock size={16} />
+                      <span>Request Completion</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => openModal('invite', { jobId: job.id, jobName: job.jobName })}
                     className="w-full bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-teal-400"
@@ -435,30 +454,18 @@ export default function JobDetails({ onClose }) {
                 </div>
               )}
 
-              {/* ADMIN Drawer */}
-              {activeDrawer === 'ADMIN' && (
+              {/* ADMIN Drawer (Dispatch Only) */}
+              {isDispatchView && activeDrawer === 'ADMIN' && (
                 <div className="space-y-3">
-                  {isDispatchView && (
-                    <button
-                      onClick={() => openModal('createJob', { editMode: true, job })}
-                      className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-indigo-400"
-                    >
-                      <Pencil size={16} />
-                      <span>Edit Job</span>
-                    </button>
-                  )}
+                  <button
+                    onClick={() => openModal('createJob', { editMode: true, job })}
+                    className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    <Pencil size={16} />
+                    <span>Edit Job</span>
+                  </button>
 
-                  {isAssigned && job.status !== 'pending-completion' && (
-                    <button
-                      onClick={() => updateStatus('pending-completion')}
-                      className="w-full bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-green-400"
-                    >
-                      <Clock size={16} />
-                      <span>Request Completion</span>
-                    </button>
-                  )}
-
-                  {isDispatchView && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
+                  {job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
                     <button
                       onClick={() => updateStatus('cancelled')}
                       className="w-full bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-amber-400"
@@ -468,7 +475,7 @@ export default function JobDetails({ onClose }) {
                     </button>
                   )}
 
-                  {isDispatchView && job.status !== 'archived' && (
+                  {job.status !== 'archived' && (
                     <button
                       onClick={() => updateStatus('archived')}
                       className="w-full bg-slate-700/40 hover:bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-slate-400"
@@ -478,7 +485,7 @@ export default function JobDetails({ onClose }) {
                     </button>
                   )}
 
-                  {isDispatchView && job.status === 'archived' && (
+                  {job.status === 'archived' && (
                     <button
                       onClick={() => updateStatus(job.previousStatus || 'completed')}
                       className="w-full bg-slate-700/40 hover:bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-slate-400"
@@ -488,19 +495,13 @@ export default function JobDetails({ onClose }) {
                     </button>
                   )}
 
-                  {isDispatchView && (
-                    <button
-                      onClick={handleDelete}
-                      className="w-full bg-red-950/40 hover:bg-red-900/50 text-red-300 border border-red-700/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-red-400"
-                    >
-                      <Trash2 size={16} />
-                      <span>Delete Job</span>
-                    </button>
-                  )}
-
-                  {!isDispatchView && (!isAssigned || job.status === 'pending-completion') && (
-                    <p className="text-gray-500 text-xs italic text-center py-2">No admin actions available.</p>
-                  )}
+                  <button
+                    onClick={handleDelete}
+                    className="w-full bg-red-950/40 hover:bg-red-900/50 text-red-300 border border-red-700/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-red-400"
+                  >
+                    <Trash2 size={16} />
+                    <span>Delete Job</span>
+                  </button>
                 </div>
               )}
 

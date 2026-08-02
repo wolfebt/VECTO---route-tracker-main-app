@@ -103,3 +103,27 @@ body {
   @apply border-primary-500 bg-slate-800/80;
   box-shadow: 0 0 15px rgba(14, 165, 233, 0.3);
 }
+
+/* VECTO Title Metallic Grey & Electric Blue Shift */
+@keyframes vectoColorShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.vecto-brand-title {
+  background: linear-gradient(120deg, #ffffff 0%, #cbd5e1 20%, #38bdf8 45%, #60a5fa 65%, #e2e8f0 85%, #ffffff 100%);
+  background-size: 250% 250%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: vectoColorShift 5s ease infinite;
+  letter-spacing: 0.06em;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+}
+

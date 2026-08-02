@@ -98,7 +98,9 @@ function App() {
         <div className="md:hidden fixed top-0 left-0 right-0 h-12 z-50 bg-slate-950/90 backdrop-blur-2xl border-b border-white/10 px-3 flex items-center justify-between shadow-xl">
           {/* Left: Branding */}
           <div className="flex items-center space-x-2">
-            <h1 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Vecto</h1>
+            <div className="px-2 py-0.5 rounded-md border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_12px_rgba(6,182,212,0.35)]">
+              <h1 className="text-sm font-black vecto-brand-title">VECTO</h1>
+            </div>
           </div>
 
           {/* Center: Thin View Switcher Segment Control */}
@@ -152,9 +154,11 @@ function App() {
           {/* Panel 2 (Right Side on Mobile / Right Sidebar on Desktop): Job Info & Sidebar */}
           <div className="w-[100vw] md:w-96 glass-panel z-10 shrink-0 relative h-full flex flex-col border-l border-white/5 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
             {/* Desktop Only Sidebar Header */}
-            <div className="hidden md:flex p-5 border-b border-white/10 justify-between items-center bg-slate-900/40 backdrop-blur-md shrink-0">
-              <div>
-                <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">Vecto</h1>
+            <div className="hidden md:flex p-4 border-b border-white/10 justify-between items-center bg-slate-900/40 backdrop-blur-md shrink-0">
+              <div className="flex items-center space-x-3">
+                <div className="px-3 py-1 rounded-lg border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_14px_rgba(6,182,212,0.35)]">
+                  <h1 className="text-xl font-black vecto-brand-title">VECTO</h1>
+                </div>
                 <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
               </div>
               <div className="flex items-center space-x-2">

@@ -14,11 +14,13 @@ export default function Auth() {
         {/* Subtle top highlight */}
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-primary-500 to-transparent opacity-50"></div>
         
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400 mb-2 tracking-tight">
-            Vecto
-          </h1>
-          <p className="text-gray-400 font-medium">Route Tracking & Fleet Management</p>
+        <div className="mb-8 flex flex-col items-center">
+          <div className="px-5 py-1.5 rounded-xl border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_20px_rgba(6,182,212,0.4)] mb-3">
+            <h1 className="text-4xl font-black vecto-brand-title tracking-wider">
+              VECTO
+            </h1>
+          </div>
+          <p className="text-gray-400 font-medium text-sm">Route Tracking & Fleet Management</p>
         </div>
         
         <button

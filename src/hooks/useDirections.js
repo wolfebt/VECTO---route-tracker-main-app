@@ -122,11 +122,9 @@ export function useDirections({ map, selectedJobId, jobs }) {
     const color = job.routeColor || defaultColor;
 
     const currentSignature = JSON.stringify({ origin: job.origin, dests, optimize: job.optimizeRoute, color });
-    if (lastRouteSignature.current === currentSignature && accentPolylineRef.current && mainPolylineRef.current) {
-      // Already routed this exact job configuration - ensure polylines remain visible on map
+    if (lastRouteSignature.current === currentSignature) {
+      // Already routed this exact job configuration - ensure renderer remains active
       directionsRenderer.setMap(map);
-      accentPolylineRef.current.setMap(map);
-      mainPolylineRef.current.setMap(map);
       return;
     }
 
@@ -148,54 +146,6 @@ export function useDirections({ map, selectedJobId, jobs }) {
       if (response.routes && response.routes.length > 0) {
         const route = response.routes[0];
         const path = route.overview_path;
-
-        if (path && window.google?.maps?.Polyline) {
-          clearRoutePolylines();
-
-          // Accent polyline (pulsing soft grey and route color glow underneath)
-          const accent = new window.google.maps.Polyline({
-            path,
-            strokeColor: '#64748b',
-            strokeOpacity: 0.4,
-            strokeWeight: 14,
-            zIndex: 1,
-            map,
-          });
-          accentPolylineRef.current = accent;
-
-          // Main polyline (crisp route color on top)
-          const main = new window.google.maps.Polyline({
-            path,
-            strokeColor: color,
-            strokeOpacity: 0.95,
-            strokeWeight: 6,
-            zIndex: 2,
-            map,
-          });
-          mainPolylineRef.current = main;
-
-          // Smooth pulse loop
-          const greyColor = '#64748b'; // soft slate grey accent
-          const animatePulse = (timestamp) => {
-            if (!accentPolylineRef.current) return;
-
-            // Oscillate with sine wave over ~2 seconds
-            const factor = (Math.sin(timestamp / 380) + 1) / 2;
-            const currentAccentColor = interpolateColor(greyColor, color, factor);
-            const currentOpacity = 0.25 + factor * 0.45; // 0.25 -> 0.70
-            const currentWeight = 12 + factor * 4;        // 12px -> 16px
-
-            accentPolylineRef.current.setOptions({
-              strokeColor: currentAccentColor,
-              strokeOpacity: currentOpacity,
-              strokeWeight: currentWeight,
-            });
-
-            animFrameRef.current = requestAnimationFrame(animatePulse);
-          };
-
-          animFrameRef.current = requestAnimationFrame(animatePulse);
-        }
 
         let totalSeconds = 0;
         let totalNormalSeconds = 0;

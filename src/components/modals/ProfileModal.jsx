@@ -34,6 +34,17 @@ export default function ProfileModal() {
         color
       });
       setCurrentUser({ ...currentUser, name: name.trim(), phone: phone.trim(), color });
+
+      const currentCompanyId = useAppStore.getState().companyId;
+      if (currentCompanyId) {
+        await updateDoc(doc(db, `companies/${currentCompanyId}/active_drivers`, currentUser.id), {
+          name: name.trim(),
+          color
+        }).catch(() => {
+          // Ignore if driver is not actively sharing location
+        });
+      }
+
       closeModal('profile');
       addToast("Profile updated.", "success");
     } catch (err) {

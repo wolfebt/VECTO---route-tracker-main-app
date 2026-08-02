@@ -28,6 +28,9 @@ export function useAuth() {
           });
         } else {
           const data = userDoc.data();
+          userData.name = data.name || user.displayName || user.email;
+          userData.phone = data.phone || '';
+          userData.color = data.color || '#22c55e';
           userData.companies = data.companies || [];
           userData.preferences = data.preferences || {};
           userData.lastRead = data.lastRead || {};

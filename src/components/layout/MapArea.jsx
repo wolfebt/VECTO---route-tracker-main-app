@@ -84,7 +84,7 @@ function DriverMarkers() {
         let statusText = driver.status || 'Available';
         let pinColor = driver.color || '#22c55e';
         let glyphColor = '#ffffff';
-        let borderColor = '#166534';
+        let borderColor = driver.color ? '#00000055' : '#166534';
 
         const assignedJob = jobs.find(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === driver.id));
         if (assignedJob) {

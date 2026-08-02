@@ -23,7 +23,10 @@ export const useAppStore = create((set) => ({
     set({ companyId: id, companyName: name, isDispatchView: isDispatch });
   },
   clearCompany: () => {
-    try { localStorage.removeItem('vecto_last_company_id'); } catch (e) { console.warn(e); }
+    try { 
+      localStorage.removeItem('vecto_last_company_id'); 
+      sessionStorage.setItem('vecto_has_cleared_company', 'true');
+    } catch (e) { console.warn(e); }
     set({ companyId: null, companyName: null, isDispatchView: false });
   },
 

@@ -121,9 +121,15 @@ export function useLocationSharing() {
             await updateDriverLocation(latitude, longitude);
           },
           (err) => {
-            console.error("Geolocation error:", err);
-            useToastStore.getState().addToast("Failed to get location.", "error");
-            setIsSharingLocation(false);
+            console.warn("Geolocation signal issue:", err.message || err.code || err);
+            if (err.code === 1 /* PERMISSION_DENIED */) {
+              useToastStore.getState().addToast("Location permission denied. Please allow location access in browser settings.", "error");
+              setIsSharingLocation(false);
+            } else if (err.code === 3 /* TIMEOUT */) {
+              console.warn("Location request timed out; retrying on next tick...");
+            } else {
+              useToastStore.getState().addToast("Failed to acquire location signal.", "error");
+            }
           },
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );

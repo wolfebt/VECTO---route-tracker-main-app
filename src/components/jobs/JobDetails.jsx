@@ -19,6 +19,7 @@ import {
   Slash, 
   Archive, 
   Trash2, 
+  MessageSquare,
   MessageSquarePlus 
 } from 'lucide-react';
 
@@ -355,47 +356,65 @@ export default function JobDetails({ onClose }) {
             </div>
         )}
         
-        {/* Action Drawers: JOB, ADMIN, REPORT */}
+        {/* Action Drawers: JOB, ADMIN, REPORT, CHAT */}
         <div className="mt-4 border border-gray-800 rounded-xl bg-slate-900/90 overflow-hidden shadow-lg">
           {/* Header Buttons Bar */}
-          <div className="grid grid-cols-3 bg-slate-950 p-1 gap-1 border-b border-gray-800">
+          <div className="grid grid-cols-4 bg-slate-950 p-1 gap-1 border-b border-gray-800">
             <button
               onClick={() => setActiveDrawer(activeDrawer === 'JOB' ? null : 'JOB')}
-              className={`py-2.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 min-h-[44px] ${
+              className={`py-2.5 px-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center space-x-1 min-h-[44px] ${
                 activeDrawer === 'JOB'
                   ? 'bg-blue-600/30 text-blue-400 border border-blue-500/50 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
                   : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              <Briefcase size={15} />
+              <Briefcase size={14} />
               <span>JOB</span>
-              <ChevronDown size={14} className={`transition-transform duration-200 ${activeDrawer === 'JOB' ? 'rotate-180 text-blue-400' : 'opacity-60'}`} />
+              <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'JOB' ? 'rotate-180 text-blue-400' : 'opacity-60'}`} />
             </button>
 
             <button
               onClick={() => setActiveDrawer(activeDrawer === 'ADMIN' ? null : 'ADMIN')}
-              className={`py-2.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 min-h-[44px] ${
+              className={`py-2.5 px-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center space-x-1 min-h-[44px] ${
                 activeDrawer === 'ADMIN'
                   ? 'bg-purple-600/30 text-purple-400 border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.3)]'
                   : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              <ShieldAlert size={15} />
+              <ShieldAlert size={14} />
               <span>ADMIN</span>
-              <ChevronDown size={14} className={`transition-transform duration-200 ${activeDrawer === 'ADMIN' ? 'rotate-180 text-purple-400' : 'opacity-60'}`} />
+              <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'ADMIN' ? 'rotate-180 text-purple-400' : 'opacity-60'}`} />
             </button>
 
             <button
               onClick={() => setActiveDrawer(activeDrawer === 'REPORT' ? null : 'REPORT')}
-              className={`py-2.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 min-h-[44px] ${
+              className={`py-2.5 px-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center space-x-1 min-h-[44px] ${
                 activeDrawer === 'REPORT'
                   ? 'bg-teal-600/30 text-teal-400 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.3)]'
                   : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              <FileText size={15} />
+              <FileText size={14} />
               <span>REPORT</span>
-              <ChevronDown size={14} className={`transition-transform duration-200 ${activeDrawer === 'REPORT' ? 'rotate-180 text-teal-400' : 'opacity-60'}`} />
+              <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'REPORT' ? 'rotate-180 text-teal-400' : 'opacity-60'}`} />
+            </button>
+
+            <button
+              onClick={() => setActiveDrawer(activeDrawer === 'CHAT' ? null : 'CHAT')}
+              className={`py-2.5 px-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center space-x-1 min-h-[44px] ${
+                activeDrawer === 'CHAT'
+                  ? 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <MessageSquare size={14} />
+              <span>CHAT</span>
+              {messages.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[10px] rounded-full font-bold border border-emerald-500/30">
+                  {messages.length}
+                </span>
+              )}
+              <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'CHAT' ? 'rotate-180 text-emerald-400' : 'opacity-60'}`} />
             </button>
           </div>
 
@@ -534,57 +553,62 @@ export default function JobDetails({ onClose }) {
                   </button>
                 </div>
               )}
+
+              {/* CHAT Drawer */}
+              {activeDrawer === 'CHAT' && (
+                <div className="space-y-3">
+                  <div className="max-h-60 overflow-y-auto p-2 space-y-2 bg-gray-950/60 rounded-xl border border-gray-800/80">
+                    {messages.length === 0 ? (
+                      <div className="text-center text-gray-500 text-xs py-4">No messages yet.</div>
+                    ) : (
+                      messages.map(msg => {
+                        const isMe = msg.senderId === currentUser.id;
+                        return (
+                          <div key={msg.id} className={`max-w-[88%] ${isMe ? 'ml-auto' : 'mr-auto'}`}>
+                              <div className={`text-[10px] text-gray-500 mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>{isMe ? 'You' : msg.senderName}</div>
+                              <div className={`p-2 rounded-lg text-xs shadow ${isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-800 text-gray-200 rounded-bl-none border border-gray-700/60'}`}>
+                                  {msg.text && <div>{msg.text}</div>}
+                                  {msg.attachmentUrl && <img src={msg.attachmentUrl} className="w-full rounded mt-1 max-h-32 object-cover cursor-pointer hover:opacity-90" onClick={() => window.open(msg.attachmentUrl)} alt="attachment" />}
+                              </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSendChat} className="flex flex-col space-y-2">
+                     <div className="flex items-center space-x-2">
+                        <input 
+                          type="text" 
+                          value={chatInput} 
+                          onChange={e => setChatInput(e.target.value)} 
+                          placeholder="Type a message..." 
+                          className="flex-1 bg-gray-800/90 text-white rounded-full px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 border border-gray-700"
+                        />
+                        <label 
+                           className="cursor-pointer p-2 bg-gray-800 text-gray-300 hover:text-white rounded-full focus-within:ring-2 focus-within:ring-emerald-500 border border-gray-700 shrink-0" 
+                           aria-label="Attach File"
+                        >
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                           <input type="file" className="sr-only" onChange={e => setChatFile(e.target.files[0])} accept="image/*" />
+                        </label>
+                     </div>
+                     {chatFile && (
+                       <div className="text-[11px] text-emerald-400 px-2 truncate flex items-center justify-between">
+                         <span>File: {chatFile.name}</span>
+                         <button type="button" onClick={() => setChatFile(null)} className="text-red-400 font-bold ml-2">&times;</button>
+                       </div>
+                     )}
+                     <button type="submit" disabled={sending} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-2.5 text-xs font-bold shadow disabled:opacity-50 transition-colors">
+                        {sending ? 'Sending...' : 'Send Message'}
+                     </button>
+                  </form>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
-
-      {/* Chat */}
-      <div className="max-h-[33%] shrink-0 overflow-y-auto p-4 space-y-2 bg-gray-850">
-        {messages.length === 0 ? (
-          <div className="text-center text-gray-500 text-xs mt-4">No messages yet.</div>
-        ) : (
-          messages.map(msg => {
-            const isMe = msg.senderId === currentUser.id;
-            return (
-              <div key={msg.id} className={`max-w-[85%] ${isMe ? 'ml-auto' : 'mr-auto'}`}>
-                  <div className={`text-xs text-gray-500 mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>{isMe ? 'You' : msg.senderName}</div>
-                  <div className={`p-2 rounded-lg text-sm shadow ${isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-700 text-gray-200 rounded-bl-none'}`}>
-                      {msg.text && <div>{msg.text}</div>}
-                      {msg.attachmentUrl && <img src={msg.attachmentUrl} className="w-full rounded mt-1 max-h-32 object-cover cursor-pointer hover:opacity-90" onClick={() => window.open(msg.attachmentUrl)} alt="attachment" />}
-                  </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Chat Input */}
-      <div className="p-3 bg-gray-800 border-t border-gray-700 shrink-0">
-         <form onSubmit={handleSendChat} className="flex flex-col space-y-2">
-            <div className="flex items-center space-x-2">
-               <input 
-                 type="text" 
-                 value={chatInput} 
-                 onChange={e => setChatInput(e.target.value)} 
-                 placeholder="Type a message..." 
-                 className="flex-1 bg-gray-700 text-white rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-               />
-               <label 
-                  className="cursor-pointer p-2 bg-gray-700 text-gray-300 hover:text-white rounded-full focus-within:ring-2 focus-within:ring-blue-500" 
-                  aria-label="Attach File"
-               >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                  <input type="file" className="sr-only" onChange={e => setChatFile(e.target.files[0])} accept="image/*" />
-               </label>
-            </div>
-            {chatFile && <div className="text-xs text-blue-400 px-2 truncate">File: {chatFile.name} <button type="button" onClick={() => setChatFile(null)} className="text-red-400 ml-2">&times;</button></div>}
-            <button type="submit" disabled={sending} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded py-2 text-sm font-bold shadow disabled:opacity-50">
-               {sending ? 'Sending...' : 'Send'}
-            </button>
-         </form>
-      </div>
-
     </div>
   );
 }

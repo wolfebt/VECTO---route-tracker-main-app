@@ -25,6 +25,8 @@ function App() {
   const currentUser = useAppStore(state => state.currentUser);
   const companyId = useAppStore(state => state.companyId);
   const selectedJobId = useAppStore(state => state.selectedJobId);
+  const setSelectedJobId = useAppStore(state => state.setSelectedJobId);
+  const setActiveJobTab = useAppStore(state => state.setActiveJobTab);
   const openModal = useAppStore(state => state.openModal);
   const mapsApiKey = useAppStore(state => state.mapsApiKey);
   
@@ -45,6 +47,12 @@ function App() {
         window.dispatchEvent(new Event('resize'));
       }, 300);
     }
+  };
+
+  const handleGoHome = () => {
+    setSelectedJobId(null);
+    setActiveJobTab('current');
+    setMobileViewAndResize('sidebar');
   };
 
   const handleTouchEnd = (e) => {
@@ -100,9 +108,14 @@ function App() {
         <div className="md:hidden fixed top-0 left-0 right-0 h-12 z-50 bg-slate-950/90 backdrop-blur-2xl border-b border-white/10 px-3 flex items-center justify-between shadow-xl">
           {/* Left: Branding */}
           <div className="flex items-center space-x-2">
-            <div className="px-2 py-0.5 rounded-md border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_12px_rgba(6,182,212,0.35)]">
-              <h1 className="text-sm font-black vecto-brand-title">VECTO</h1>
-            </div>
+            <button 
+              onClick={handleGoHome}
+              className="px-2 py-0.5 rounded-md border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_12px_rgba(6,182,212,0.35)] hover:border-cyan-300 hover:shadow-[0_0_16px_rgba(6,182,212,0.5)] active:scale-95 transition-all cursor-pointer flex items-center group"
+              title="Go to Home"
+              aria-label="Go to Home"
+            >
+              <h1 className="text-sm font-black vecto-brand-title group-hover:brightness-110">VECTO</h1>
+            </button>
           </div>
 
           {/* Center: Thin View Switcher Segment Control */}
@@ -158,9 +171,14 @@ function App() {
             {/* Desktop Only Sidebar Header */}
             <div className="hidden md:flex p-4 border-b border-white/10 justify-between items-center bg-slate-900/40 backdrop-blur-md shrink-0">
               <div className="flex items-center space-x-3">
-                <div className="px-3 py-1 rounded-lg border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_14px_rgba(6,182,212,0.35)]">
-                  <h1 className="text-xl font-black vecto-brand-title">VECTO</h1>
-                </div>
+                <button 
+                  onClick={handleGoHome}
+                  className="px-3 py-1 rounded-lg border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_14px_rgba(6,182,212,0.35)] hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] active:scale-95 transition-all cursor-pointer flex items-center group"
+                  title="Go to Home"
+                  aria-label="Go to Home"
+                >
+                  <h1 className="text-xl font-black vecto-brand-title group-hover:brightness-110">VECTO</h1>
+                </button>
                 <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
               </div>
               <div className="flex items-center space-x-2">

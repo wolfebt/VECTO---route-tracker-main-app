@@ -156,26 +156,6 @@ export default function JobDetails({ onClose }) {
     });
   };
 
-  const handleSaveNote = async (e) => {
-    e.preventDefault();
-    if (!noteInput.trim()) return;
-    setSavingNote(true);
-    try {
-      await addDoc(collection(db, `companies/${companyId}/jobs/${job.id}/notes`), {
-        text: noteInput.trim(),
-        driverId: currentUser.id,
-        driverName: currentUser.name,
-        timestamp: serverTimestamp()
-      });
-      setNoteInput('');
-      addToast("Update logged successfully", "success");
-    } catch (error) {
-      console.error(error);
-      addToast("Failed to log update", "error");
-    }
-    setSavingNote(false);
-  };
-
   const handleSendChat = async (e) => {
     e.preventDefault();
     if (!chatInput.trim() && !chatFile) return;
@@ -283,20 +263,7 @@ export default function JobDetails({ onClose }) {
               </a>
             )}
         </div>
-        {job.instructions && job.instructions.length > 0 ? (
-            <div className="mt-2 space-y-1">
-                <strong className="text-gray-200 text-xs uppercase">Instructions:</strong>
-                {job.instructions.map((inst, i) => (
-                    <div key={i} className="text-gray-400 p-2 bg-gray-800 rounded text-xs flex items-start">
-                        {inst.isPriority && <span className="bg-red-500/20 text-red-400 px-1 py-0.5 rounded text-[10px] font-bold mr-2 uppercase border border-red-500/30">Priority</span>}
-                        {inst.target !== 'all' && <span className="bg-blue-500/20 text-blue-400 px-1 py-0.5 rounded text-[10px] font-bold mr-2 uppercase border border-blue-500/30">For: {activeDrivers.find(d => d.id === inst.target)?.name || inst.target}</span>}
-                        <span>{inst.text}</span>
-                    </div>
-                ))}
-            </div>
-        ) : (
-            job.note && <p className="text-gray-400 p-2 bg-gray-800 rounded italic text-xs mt-2">{job.note}</p>
-        )}
+        {job.note && <p className="text-gray-400 p-2 bg-gray-800 rounded italic text-xs mt-2">{job.note}</p>}
         <div className="text-gray-400 mt-2">
             <strong className="text-gray-200">Team ({job.assignedDrivers?.length || 0}/{job.driversNeeded}):</strong> 
             {job.assignedDrivers?.length > 0 ? (

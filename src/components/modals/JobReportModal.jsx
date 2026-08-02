@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
@@ -241,43 +240,6 @@ export default function JobReportModal() {
             }
         }
       `}</style>
-=======
-import React from 'react';
-import { useAppStore } from '../../store/useAppStore';
-import { FileText, X } from 'lucide-react';
-
-export default function JobReportModal() {
-  const { activeModal, modalData, closeModal } = useAppStore();
-
-  if (activeModal !== 'jobReport') return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-sky-400">
-            <FileText size={20} />
-            <h3 className="font-bold text-white text-base">Job Summary & Report</h3>
-          </div>
-          <button onClick={closeModal} className="text-gray-400 hover:text-white p-1 rounded-lg">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-5 overflow-y-auto space-y-4 text-sm text-gray-300">
-          <p className="text-gray-400 italic">Job report data for ID: {modalData?.jobId || 'N/A'}</p>
-        </div>
-
-        <div className="p-4 border-t border-gray-800 flex justify-end">
-          <button
-            onClick={closeModal}
-            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-semibold"
-          >
-            Close
-          </button>
-        </div>
-      </div>
->>>>>>> f6bc477 (feat: convert message box to CHAT drawer and add home navigation to VECTO title badge)
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
 import JobsList from '../jobs/JobsList';
 import DriversList from '../jobs/DriversList';
-import { QrCode, Share2, Building2 } from 'lucide-react';
+import { QrCode, Share2 } from 'lucide-react';
 
 export default function Sidebar() {
   const isDispatchView = useAppStore(state => state.isDispatchView);
@@ -13,7 +13,6 @@ export default function Sidebar() {
   const companyId = useAppStore(state => state.companyId);
   const selectedJobId = useAppStore(state => state.selectedJobId);
   const openModal = useAppStore(state => state.openModal);
-  const clearCompany = useAppStore(state => state.clearCompany);
   const addToast = useToastStore((state) => state.addToast);
 
   const handleShareTeamMap = async () => {
@@ -61,20 +60,12 @@ export default function Sidebar() {
             tabIndex={0}
             onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openModal('companySettings'); }}
             aria-label="Company Settings"
-            className="col-span-3 flex justify-between items-center bg-white/5 border border-white/5 p-2.5 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/10 transition-all duration-300 group shadow-sm focus-visible:ring-2 focus-visible:ring-primary-500"
+            className="col-span-4 flex justify-between items-center bg-white/5 border border-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 hover:border-white/10 transition-all duration-300 group shadow-sm focus-visible:ring-2 focus-visible:ring-primary-500"
             title="Company Settings"
           >
-            <span className="font-semibold text-gray-200 group-hover:text-white transition-colors truncate text-xs">{companyName}</span>
-            <span className="text-[10px] uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-1.5 py-0.5 rounded shrink-0">Settings</span>
+            <span className="font-semibold text-gray-200 group-hover:text-white transition-colors truncate">{companyName}</span>
+            <span className="text-xs uppercase tracking-wider text-gray-400 group-hover:text-primary-400 transition-colors bg-black/20 px-2 py-1 rounded shrink-0">Settings</span>
           </div>
-          <button 
-            onClick={clearCompany}
-            className="col-span-1 bg-amber-600/20 border border-amber-500/30 text-amber-400 hover:bg-amber-600/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer"
-            title="Switch Fleet / Change Company"
-            aria-label="Switch Fleet / Change Company"
-          >
-            <Building2 size={18} />
-          </button>
           <button 
             onClick={handleShareTeamMap}
             className="col-span-1 bg-sky-600/20 border border-sky-500/30 text-sky-400 hover:bg-sky-600/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer"

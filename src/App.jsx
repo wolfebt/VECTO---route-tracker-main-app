@@ -13,6 +13,8 @@ import AdminSettingsModal from './components/modals/AdminSettingsModal';
 import CompanySettingsModal from './components/modals/CompanySettingsModal';
 import ProfileModal from './components/modals/ProfileModal';
 import UserGuideModal from './components/modals/UserGuideModal';
+import TechnicalsModal from './components/modals/TechnicalsModal';
+import DevelopmentModal from './components/modals/DevelopmentModal';
 import InviteModal from './components/modals/InviteModal';
 import JobReportModal from './components/modals/JobReportModal';
 import LogProgressModal from './components/modals/LogProgressModal';
@@ -209,6 +211,8 @@ function App() {
         <CompanySettingsModal />
         <ProfileModal />
         <UserGuideModal />
+        <TechnicalsModal />
+        <DevelopmentModal />
         <InviteModal />
         <JobReportModal />
         <LogProgressModal />

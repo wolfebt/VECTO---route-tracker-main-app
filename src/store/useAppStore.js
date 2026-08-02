@@ -44,6 +44,8 @@ export const useAppStore = create((set) => ({
     settings: false,
     profile: false,
     userGuide: false,
+    technicals: false,
+    development: false,
     invite: false,
     adminSettings: false,
     companySettings: false,

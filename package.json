@@ -17,6 +17,7 @@
     "@capacitor/core": "^8.4.2",
     "@capacitor/geolocation": "^8.2.0",
     "@capacitor/ios": "^8.4.2",
+    "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
     "@vis.gl/react-google-maps": "^1.9.0",
     "firebase": "^12.16.0",
@@ -24,6 +25,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
     "tailwindcss": "^4.3.3",
     "zustand": "^5.0.14"
   },

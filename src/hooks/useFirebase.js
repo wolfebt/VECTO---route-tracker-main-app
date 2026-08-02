@@ -18,22 +18,48 @@ export function useAuth() {
         const userDocRef = doc(db, 'users', user.uid);
         const userDoc = await getDoc(userDocRef);
         
+        let localProfile = null;
+        try {
+          const raw = localStorage.getItem('vecto_driver_profile');
+          if (raw) localProfile = JSON.parse(raw);
+        } catch (e) {
+          console.warn("Could not read local profile cache:", e);
+        }
+
         if (!userDoc.exists()) {
-          await setDoc(userDocRef, {
+          const initialProfile = {
             email: user.email,
-            name: user.displayName,
+            name: localProfile?.name || user.displayName || user.email,
+            phone: localProfile?.phone || localProfile?.number || '',
+            number: localProfile?.phone || localProfile?.number || '',
+            color: localProfile?.color || '#22c55e',
             createdAt: serverTimestamp(),
             companies: [],
             preferences: {}
-          });
+          };
+          await setDoc(userDocRef, initialProfile, { merge: true });
+          userData.name = initialProfile.name;
+          userData.phone = initialProfile.phone;
+          userData.number = initialProfile.number;
+          userData.color = initialProfile.color;
         } else {
           const data = userDoc.data();
-          userData.name = data.name || user.displayName || user.email;
-          userData.phone = data.phone || '';
-          userData.color = data.color || '#22c55e';
+          userData.name = data.name || localProfile?.name || user.displayName || user.email;
+          userData.phone = data.phone || data.number || localProfile?.phone || localProfile?.number || '';
+          userData.number = userData.phone;
+          userData.color = data.color || localProfile?.color || '#22c55e';
           userData.companies = data.companies || [];
           userData.preferences = data.preferences || {};
           userData.lastRead = data.lastRead || {};
+
+          if ((!data.phone && userData.phone) || (!data.color && userData.color) || (!data.name && userData.name)) {
+            setDoc(userDocRef, {
+              name: userData.name,
+              phone: userData.phone,
+              number: userData.phone,
+              color: userData.color
+            }, { merge: true }).catch(console.warn);
+          }
           
           if (data.preferences.mapsApiKey) {
             setMapsApiKey(data.preferences.mapsApiKey);
@@ -129,17 +155,27 @@ export function useCompany() {
         if (currentUser?.id) {
            const memberRef = doc(db, `companies/${id}/members/${currentUser.id}`);
            const memberDoc = await getDoc(memberRef);
+           const isCreator = d.data().createdBy === currentUser.id;
+           const memberPayload = {
+             email: currentUser.email || '',
+             name: currentUser.name || currentUser.email || 'Driver',
+             phone: currentUser.phone || currentUser.number || '',
+             number: currentUser.phone || currentUser.number || '',
+             color: currentUser.color || '#22c55e',
+           };
+           
            if (!memberDoc.exists()) {
-               const isCreator = d.data().createdBy === currentUser.id;
-               await setDoc(memberRef, {
-                  email: currentUser.email,
-                  name: currentUser.name,
-                  joinedAt: serverTimestamp(),
-                  permissions: isCreator 
-                    ? { canCreateJob: true, canDeleteJob: true, canManageDrivers: true }
-                    : { canCreateJob: false, canDeleteJob: false, canManageDrivers: false }
-               });
+             await setDoc(memberRef, {
+               ...memberPayload,
+               joinedAt: serverTimestamp(),
+               permissions: isCreator 
+                 ? { canCreateJob: true, canDeleteJob: true, canManageDrivers: true }
+                 : { canCreateJob: false, canDeleteJob: false, canManageDrivers: false }
+             });
+           } else {
+             await setDoc(memberRef, memberPayload, { merge: true });
            }
+
            const userComps = currentUser.companies || [];
            if (!userComps.includes(id)) {
              await updateDoc(doc(db, 'users', currentUser.id), { companies: arrayUnion(id) }).catch(console.warn);
@@ -179,11 +215,14 @@ export function useCompany() {
 
     await updateDoc(doc(db, 'users', currentUser.id), { companies: arrayUnion(id) });
     await setDoc(doc(db, `companies/${id}/members/${currentUser.id}`), {
-        email: currentUser.email,
-        name: currentUser.name,
+        email: currentUser.email || '',
+        name: currentUser.name || currentUser.email || 'Driver',
+        phone: currentUser.phone || currentUser.number || '',
+        number: currentUser.phone || currentUser.number || '',
+        color: currentUser.color || '#22c55e',
         joinedAt: serverTimestamp(),
         permissions: { canCreateJob: false, canDeleteJob: false, canManageDrivers: false }
-    });
+    }, { merge: true });
     
     useAppStore.setState(state => ({
       currentUser: { ...state.currentUser, companies: [...userComps, id] }

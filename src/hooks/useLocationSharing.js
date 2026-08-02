@@ -49,6 +49,8 @@ export function useLocationSharing() {
       timestamp: serverTimestamp(),
       status: 'Available',
       name: currentUser.name || 'Unnamed',
+      phone: currentUser.phone || currentUser.number || '',
+      number: currentUser.phone || currentUser.number || '',
       color: currentUser.color || '#22c55e',
       activeJobId: selectedJobId || null
     };

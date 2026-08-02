@@ -45,12 +45,19 @@ export default function DriversList() {
         }
 
         return (
-          <li key={driver.id} className="flex justify-between items-center bg-gray-800 p-2 rounded-md border-l-4" style={{ borderLeftColor: driver.color || '#22c55e' }}>
-             <div className="overflow-hidden">
-                <p className="text-sm font-bold text-gray-200 truncate">{driver.name || 'Unnamed'}</p>
-                {/* <p className="text-xs text-gray-400 truncate">ETA: N/A</p> */}
+          <li key={driver.id} className="flex justify-between items-center bg-gray-800 p-2.5 rounded-md border-l-4" style={{ borderLeftColor: driver.color || '#22c55e' }}>
+             <div className="overflow-hidden pr-2">
+                <p className="text-sm font-bold text-gray-200 truncate flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: driver.color || '#22c55e' }}></span>
+                  {driver.name || 'Unnamed'}
+                </p>
+                {(driver.phone || driver.number) && (
+                  <p className="text-[11px] text-gray-400 truncate mt-0.5 font-mono">
+                    📞 {driver.phone || driver.number}
+                  </p>
+                )}
              </div>
-             <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
+             <div className="flex items-center space-x-2 flex-shrink-0 ml-auto">
                 <span className="text-xs font-semibold text-gray-400 max-w-[80px] truncate">{statusText}</span>
                 <span className={`w-3 h-3 rounded-full ${driver.color ? '' : statusColor}`} style={dotStyle}></span>
                 {isDispatchView && (

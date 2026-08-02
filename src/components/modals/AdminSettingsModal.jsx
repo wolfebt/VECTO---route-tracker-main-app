@@ -55,9 +55,17 @@ export default function AdminSettingsModal() {
               return (
                 <li key={member.id} className="bg-gray-700 p-3 rounded relative">
                   <div className="flex justify-between items-start mb-2">
-                    <p className="font-bold text-sm text-gray-200">
-                      {member.name || member.email} {isMe && '(You)'}
-                    </p>
+                    <div>
+                      <p className="font-bold text-sm text-gray-200 flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: member.color || '#22c55e' }}></span>
+                        {member.name || member.email} {isMe && '(You)'}
+                      </p>
+                      {(member.phone || member.number) && (
+                        <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                          📞 {member.phone || member.number}
+                        </p>
+                      )}
+                    </div>
                     {!isMe && (
                       <button onClick={() => handleRemoveMember(member.id)} className="text-red-400 hover:text-red-300 p-1" title="Remove Member">
                         <Trash2 size={16} />

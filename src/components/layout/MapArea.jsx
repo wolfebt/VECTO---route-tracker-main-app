@@ -132,7 +132,10 @@ function DriverMarkers() {
                     onClick={() => setSelectedDriverId(null)}
                   >
                      <strong className="block mb-1 font-bold">{driver.name || 'Unnamed'}</strong>
-                     <p className="text-xs mb-1">{statusText}</p>
+                     <p className="text-xs mb-1 text-gray-700">{statusText}</p>
+                     {(driver.phone || driver.number) && (
+                        <p className="text-xs font-mono text-blue-700 mb-1 font-semibold">📞 {driver.phone || driver.number}</p>
+                     )}
                      <p className="text-[9px] text-gray-500 italic mt-1 border-t pt-1 border-gray-200">(Click here or outside to close)</p>
                   </div>
                 </InfoWindow>

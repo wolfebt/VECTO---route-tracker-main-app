@@ -46,7 +46,7 @@ export const useAppStore = create((set) => ({
   routeInfo: null,
   setRouteInfo: (info) => set({ routeInfo: info }),
 
-  routeStyle: 'outlined', // 'outlined' (transparent center) | 'traffic' (green/orange/red outline) | 'solid'
+  routeStyle: 'alternating', // 'alternating' (fade color to transparent road & back) | 'outlined' | 'traffic' | 'solid'
   setRouteStyle: (style) => set({ routeStyle: style }),
   showTrafficLayer: true,
   setShowTrafficLayer: (show) => set({ showTrafficLayer: show }),

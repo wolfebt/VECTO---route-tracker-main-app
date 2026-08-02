@@ -302,37 +302,50 @@ export default function MapArea() {
         </div>
 
         {/* Route Style Pills */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap">
+          <button
+            type="button"
+            onClick={() => setRouteStyle('alternating')}
+            className={`flex-1 px-2 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+              routeStyle === 'alternating'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/40 border border-emerald-400/30 ring-1 ring-emerald-400/40'
+                : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80'
+            }`}
+            title="Alternating color & transparent road view (Smooth fade between chosen color & road)"
+          >
+            <span className="text-sm">🔄</span> Alternating Fade
+          </button>
+
           <button
             type="button"
             onClick={() => setRouteStyle('outlined')}
-            className={`flex-1 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+            className={`flex-1 px-2 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
               routeStyle === 'outlined'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40 border border-blue-400/30'
                 : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80'
             }`}
             title="Outline with transparent center showing map road"
           >
-            <span className="text-sm">🛣️</span> Outline Path
+            <span className="text-sm">🛣️</span> Outline
           </button>
 
           <button
             type="button"
             onClick={() => setRouteStyle('traffic')}
-            className={`flex-1 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+            className={`flex-1 px-2 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
               routeStyle === 'traffic'
                 ? 'bg-amber-600 text-white shadow-md shadow-amber-900/40 border border-amber-400/30'
                 : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80'
             }`}
             title="Road conditions by traffic speed (Green, Orange, Red)"
           >
-            <span className="text-sm">🚦</span> Traffic Status
+            <span className="text-sm">🚦</span> Traffic
           </button>
 
           <button
             type="button"
             onClick={() => setRouteStyle('solid')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+            className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
               routeStyle === 'solid'
                 ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40 border border-purple-400/30'
                 : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80'

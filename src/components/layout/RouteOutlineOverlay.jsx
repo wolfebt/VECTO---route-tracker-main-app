@@ -119,6 +119,30 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
             }}
           >
             <defs>
+              {/* CSS Animation keyframes for alternating color-to-transparent fade & flowing road dashes */}
+              <style>{`
+                @keyframes vectoRouteFadePulse {
+                  0%, 100% {
+                    opacity: 0.95;
+                    stroke-opacity: 0.95;
+                  }
+                  50% {
+                    opacity: 0.05;
+                    stroke-opacity: 0.05;
+                  }
+                }
+                @keyframes vectoRouteDashFlow {
+                  0% {
+                    stroke-dashoffset: 0;
+                  }
+                  100% {
+                    stroke-dashoffset: -104;
+                  }
+                }
+                .vecto-alternating-fade {
+                  animation: vectoRouteFadePulse 3s ease-in-out infinite, vectoRouteDashFlow 5s linear infinite;
+                }
+              `}</style>
               {/* Hollow mask: white keeps area, black erases center (transparent core showing map road) */}
               <mask id={maskId}>
                 <rect x="-20000" y="-20000" width="50000" height="50000" fill="white" />
@@ -132,6 +156,50 @@ export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColo
                 />
               </mask>
             </defs>
+
+            {/* Alternating Fade Mode: Smooth pulse from chosen color to transparent road & back, with alternating color & road gaps */}
+            {routeStyle === 'alternating' && (
+              <>
+                {/* Contrast shadow backdrop */}
+                <path
+                  d={fullD}
+                  stroke="#0f172a"
+                  strokeWidth="14"
+                  strokeOpacity="0.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                  strokeDasharray="32 20"
+                  className="vecto-alternating-fade"
+                />
+                {stepSegments.length > 0 ? (
+                  stepSegments.map(step => (
+                    <path
+                      key={step.key}
+                      d={step.d}
+                      stroke={step.color}
+                      strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                      strokeDasharray="32 20"
+                      className="vecto-alternating-fade"
+                    />
+                  ))
+                ) : (
+                  <path
+                    d={fullD}
+                    stroke={routeColor}
+                    strokeWidth="10"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                    strokeDasharray="32 20"
+                    className="vecto-alternating-fade"
+                  />
+                )}
+              </>
+            )}
 
             {/* Outlined Mode: Chosen route color edge borders with transparent center */}
             {routeStyle === 'outlined' && (

@@ -274,7 +274,15 @@ export default function JobDetails({ onClose }) {
                 <p className="text-[11px] opacity-80">{routeInfo.duration} • {routeInfo.distance}</p>
               </div>
             </div>
-            <div className="flex gap-1 shrink-0">
+            <div className="flex gap-1 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setRouteStyle('alternating')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${routeStyle === 'alternating' ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400/50' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                title="Alternating Fade (Smooth transition between color & transparent road view)"
+              >
+                Fade Road
+              </button>
               <button
                 type="button"
                 onClick={() => setRouteStyle('outlined')}

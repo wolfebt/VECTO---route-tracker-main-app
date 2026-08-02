@@ -71,7 +71,11 @@ export function useAuth() {
   }, [setCurrentUser, setMapsApiKey, setFirebaseApiKey, setGeminiApiKey]);
 
   const login = () => signInWithPopup(auth, new GoogleAuthProvider());
-  const logout = () => signOut(auth);
+  const logout = async () => {
+    useAppStore.getState().triggerSplash();
+    useAppStore.getState().clearCompany();
+    await signOut(auth);
+  };
   
   return { login, logout };
 }

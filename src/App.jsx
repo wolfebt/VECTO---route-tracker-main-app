@@ -24,7 +24,7 @@ import { Settings, Map, List, FileText } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 
 function App() {
-  const { isAuthReady, mobileView, setMobileView } = useAppStore();
+  const { isAuthReady, mobileView, setMobileView, showSplash, fadeSplash, setShowSplash, setFadeSplash } = useAppStore();
   const currentUser = useAppStore(state => state.currentUser);
   const companyId = useAppStore(state => state.companyId);
   const selectedJobId = useAppStore(state => state.selectedJobId);
@@ -36,27 +36,24 @@ function App() {
   
   const [weather, setWeather] = React.useState(null);
 
-  // Splash Screen State
-  const [minTimePassed, setMinTimePassed] = React.useState(false);
-  const [showSplash, setShowSplash] = React.useState(true);
-  const [fadeSplash, setFadeSplash] = React.useState(false);
-
+  // Splash Screen Lifecycle
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setMinTimePassed(true);
-    }, 1500); // Show splash for at least 1.5s
-    return () => clearTimeout(timer);
-  }, []);
-
-  React.useEffect(() => {
-    if (isAuthReady && minTimePassed) {
-      setFadeSplash(true);
-      const timer = setTimeout(() => {
+    let fadeTimer;
+    let hideTimer;
+    if (showSplash && !fadeSplash && isAuthReady) {
+      fadeTimer = setTimeout(() => {
+        setFadeSplash(true);
+      }, 1500); // Show splash for at least 1.5s
+    } else if (showSplash && fadeSplash) {
+      hideTimer = setTimeout(() => {
         setShowSplash(false);
       }, 500); // 500ms fade duration
-      return () => clearTimeout(timer);
     }
-  }, [isAuthReady, minTimePassed]);
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(hideTimer);
+    };
+  }, [showSplash, fadeSplash, isAuthReady, setFadeSplash, setShowSplash]);
 
   React.useEffect(() => {
     if (selectedJobId && routeInfo?.destinationCoords) {

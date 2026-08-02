@@ -11,6 +11,11 @@ export const useAppStore = create((set) => ({
   setFirebaseApiKey: (key) => set({ firebaseApiKey: key }),
   geminiApiKey: '',
   setGeminiApiKey: (key) => set({ geminiApiKey: key }),
+  showSplash: true,
+  fadeSplash: false,
+  setShowSplash: (show) => set({ showSplash: show }),
+  setFadeSplash: (fade) => set({ fadeSplash: fade }),
+  triggerSplash: () => set({ showSplash: true, fadeSplash: false }),
 
   // Company State
   companyId: null,

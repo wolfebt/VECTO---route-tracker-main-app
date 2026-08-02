@@ -36,36 +36,6 @@ export default function JobDetails({ onClose }) {
   const [sending, setSending] = useState(false);
   const [activeDrawer, setActiveDrawer] = useState('JOB');
   
-  const [weather, setWeather] = useState(null);
-
-  // Fetch weather when route destination is available
-  useEffect(() => {
-    if (routeInfo?.destinationCoords) {
-      const { lat, lng } = routeInfo.destinationCoords;
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph`)
-        .then(res => res.json())
-        .then(data => {
-            if (data?.current_weather) {
-                // simple WMO code mapping
-                const code = data.current_weather.weathercode;
-                let desc = "Clear";
-                if (code >= 1 && code <= 3) desc = "Partly Cloudy";
-                else if (code >= 51 && code <= 67) desc = "Rain";
-                else if (code >= 71 && code <= 77) desc = "Snow";
-                else if (code >= 95) desc = "Thunderstorm";
-                
-                setWeather({
-                   temp: data.current_weather.temperature,
-                   desc
-                });
-            }
-        })
-        .catch(console.error);
-    } else {
-      setWeather(null);
-    }
-  }, [routeInfo?.destinationCoords]);
-
   // Chat listener
   useEffect(() => {
     if (!selectedJobId || !companyId || !currentUser?.id) {
@@ -213,21 +183,16 @@ export default function JobDetails({ onClose }) {
       
       {/* Header */}
       <div className="p-4 border-b border-gray-800 flex justify-between items-start shrink-0">
-        <div>
-           <h2 className="text-lg font-bold text-white">{job.jobName || 'Unnamed'}</h2>
-           <div className="flex flex-wrap items-center gap-2 mt-1">
-               <span className="px-2 py-0.5 bg-gray-700 text-xs rounded-full inline-block">{job.status}</span>
+        <div className="flex flex-col flex-1 mr-2">
+           <div className="flex items-center flex-wrap gap-x-3 gap-y-2">
+               <h2 className="text-lg font-bold text-white leading-none">{job.jobName || 'Unnamed'}</h2>
+               <span className="px-2 py-0.5 bg-gray-700 text-xs rounded-full inline-block leading-none">{job.status}</span>
                {routeInfo && (
-                   <span className="text-teal-400 text-xs font-medium">Est: {routeInfo.duration} ({routeInfo.distance})</span>
-               )}
-               {weather && (
-                   <span className="text-yellow-400 text-xs font-medium" title={weather.desc}>
-                      🌡️ {weather.temp}°F {weather.desc}
-                   </span>
+                   <span className="text-teal-400 text-xs font-medium leading-none">Est: {routeInfo.duration} ({routeInfo.distance})</span>
                )}
            </div>
         </div>
-        <button onClick={() => setSelectedJobId(null)} aria-label="Close Job Details" className="text-gray-400 hover:text-white p-2 rounded focus-visible:ring-2 focus-visible:ring-primary-500">&times;</button>
+        <button onClick={() => setSelectedJobId(null)} aria-label="Close Job Details" className="text-gray-400 hover:text-white p-1 -mt-1 rounded focus-visible:ring-2 focus-visible:ring-primary-500 shrink-0">&times;</button>
       </div>
 
       {/* Details */}

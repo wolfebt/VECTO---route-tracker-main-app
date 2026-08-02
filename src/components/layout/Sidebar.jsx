@@ -2,9 +2,7 @@ import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import JobsList from '../jobs/JobsList';
 import DriversList from '../jobs/DriversList';
-import { useLocationSharing } from '../../hooks/useLocationSharing';
-import { useToastStore } from '../../store/useToastStore';
-import { MapPin, Cloud, QrCode } from 'lucide-react';
+import { QrCode } from 'lucide-react';
 
 export default function Sidebar() {
   const isDispatchView = useAppStore(state => state.isDispatchView);
@@ -12,68 +10,6 @@ export default function Sidebar() {
   const setActiveJobTab = useAppStore(state => state.setActiveJobTab);
   const companyName = useAppStore(state => state.companyName);
   const openModal = useAppStore(state => state.openModal);
-  const addToast = useToastStore(state => state.addToast);
-  
-  const { isSharingLocation, toggleLocationSharing } = useLocationSharing();
-  const [isCheckingWeather, setIsCheckingWeather] = React.useState(false);
-
-  const handleCheckWeather = () => {
-    if (!navigator.geolocation) {
-      addToast("Geolocation is not supported by your browser.", "error");
-      return;
-    }
-    setIsCheckingWeather(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        const weatherPromise = fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph`)
-          .then(res => res.json());
-          
-        const alertsPromise = Promise.race([
-          fetch(`https://api.weather.gov/alerts/active?point=${latitude},${longitude}`).then(res => res.ok ? res.json() : { features: [] }),
-          new Promise(resolve => setTimeout(() => resolve({ features: [] }), 3000))
-        ]).catch(() => ({ features: [] }));
-
-        Promise.all([weatherPromise, alertsPromise])
-          .then(([weatherData, alertsData]) => {
-            if (weatherData?.current_weather) {
-              const code = weatherData.current_weather.weathercode;
-              let desc = "Clear";
-              if (code >= 1 && code <= 3) desc = "Partly Cloudy";
-              else if (code >= 51 && code <= 67) desc = "Rain";
-              else if (code >= 71 && code <= 77) desc = "Snow";
-              else if (code >= 95) desc = "Thunderstorm";
-              
-              let toastMsg = `Current Weather: ${weatherData.current_weather.temperature}°F, ${desc}`;
-              let toastType = "info";
-              
-              // Process alerts
-              const alerts = alertsData?.features || [];
-              if (alerts.length > 0) {
-                 const alertTitles = alerts.map(a => a.properties.event).join(", ");
-                 toastMsg += ` | ⚠️ Alerts: ${alertTitles}`;
-                 toastType = "warning";
-              }
-              
-              addToast(toastMsg, toastType);
-            } else {
-              addToast("Could not fetch weather data.", "error");
-            }
-          })
-          .catch(err => {
-            console.error(err);
-            addToast("Failed to fetch weather.", "error");
-          })
-          .finally(() => setIsCheckingWeather(false));
-      },
-      (err) => {
-        console.warn(err);
-        addToast("Could not get your location for weather.", "error");
-        setIsCheckingWeather(false);
-      },
-      { enableHighAccuracy: false, maximumAge: 300000, timeout: 5000 }
-    );
-  };
 
   return (
     <div className="flex flex-col h-full bg-slate-900/50 backdrop-blur-md">
@@ -100,26 +36,6 @@ export default function Sidebar() {
             <QrCode size={18} />
           </button>
         </div>
-      </div>
-      
-      {/* Driver Controls */}
-      <div className="mb-6 px-4 space-y-3">
-         <button 
-           onClick={toggleLocationSharing} 
-           className={`w-full flex items-center justify-center font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all duration-300 border ${isSharingLocation ? 'bg-accent-600/20 text-accent-400 border-accent-500/30 hover:bg-accent-600/30' : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'}`}
-         >
-           <MapPin size={16} className={`mr-2 ${isSharingLocation ? 'animate-bounce' : ''}`} />
-           {isSharingLocation ? 'Location Sharing ON' : 'Share Location'}
-         </button>
-
-         <button 
-           onClick={handleCheckWeather} 
-           disabled={isCheckingWeather}
-           className="w-full flex items-center justify-center font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all duration-300 border bg-white/5 text-gray-300 border-white/10 hover:bg-white/10 disabled:opacity-50"
-         >
-           <Cloud size={16} className={`mr-2 ${isCheckingWeather ? 'animate-pulse' : ''}`} />
-           {isCheckingWeather ? 'Checking...' : 'Check Weather'}
-         </button>
       </div>
 
       {isDispatchView && (

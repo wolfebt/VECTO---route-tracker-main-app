@@ -34,7 +34,7 @@ export const useAppStore = create((set) => ({
   routeInfo: null,
   setRouteInfo: (info) => set({ routeInfo: info }),
 
-  isSharingLocation: false,
+  isSharingLocation: true,
   setIsSharingLocation: (isSharing) => set({ isSharingLocation: isSharing }),
 
   // Modals & UI State

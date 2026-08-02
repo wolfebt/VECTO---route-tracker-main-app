@@ -31,7 +31,58 @@ function App() {
   const setActiveJobTab = useAppStore(state => state.setActiveJobTab);
   const openModal = useAppStore(state => state.openModal);
   const mapsApiKey = useAppStore(state => state.mapsApiKey);
+  const routeInfo = useAppStore(state => state.routeInfo);
   
+  const [weather, setWeather] = React.useState(null);
+
+  // Splash Screen State
+  const [minTimePassed, setMinTimePassed] = React.useState(false);
+  const [showSplash, setShowSplash] = React.useState(true);
+  const [fadeSplash, setFadeSplash] = React.useState(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setMinTimePassed(true);
+    }, 1500); // Show splash for at least 1.5s
+    return () => clearTimeout(timer);
+  }, []);
+
+  React.useEffect(() => {
+    if (isAuthReady && minTimePassed) {
+      setFadeSplash(true);
+      const timer = setTimeout(() => {
+        setShowSplash(false);
+      }, 500); // 500ms fade duration
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthReady, minTimePassed]);
+
+  React.useEffect(() => {
+    if (selectedJobId && routeInfo?.destinationCoords) {
+      const { lat, lng } = routeInfo.destinationCoords;
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph`)
+        .then(res => res.json())
+        .then(data => {
+            if (data?.current_weather) {
+                const code = data.current_weather.weathercode;
+                let desc = "Clear";
+                if (code >= 1 && code <= 3) desc = "Partly Cloudy";
+                else if (code >= 51 && code <= 67) desc = "Rain";
+                else if (code >= 71 && code <= 77) desc = "Snow";
+                else if (code >= 95) desc = "Thunderstorm";
+                
+                setWeather({
+                   temp: data.current_weather.temperature,
+                   desc
+                });
+            }
+        })
+        .catch(console.error);
+    } else {
+      setWeather(null);
+    }
+  }, [routeInfo?.destinationCoords, selectedJobId]);
+
   const touchStartRef = React.useRef(null);
 
   const handleTouchStart = (e) => {
@@ -87,20 +138,37 @@ function App() {
   // Process QR code & URL parameters for company/job onboarding
   useUrlOnboarding();
 
+  const splashScreen = showSplash ? (
+    <div className={`fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b0f19] transition-opacity duration-500 ease-in-out ${fadeSplash ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+      <h1 className="text-6xl md:text-8xl font-black vecto-brand-title tracking-widest drop-shadow-[0_0_25px_rgba(56,189,248,0.3)]">VECTO</h1>
+    </div>
+  ) : null;
+
   if (!isAuthReady) {
-    return <div className="flex items-center justify-center min-h-screen bg-gray-900"><div className="text-white">Loading...</div></div>;
+    return splashScreen || <div className="flex items-center justify-center min-h-screen bg-[#0b0f19]"><div className="text-white font-semibold">Loading...</div></div>;
   }
 
   if (!currentUser) {
-    return <Auth />;
+    return (
+      <>
+        {splashScreen}
+        <Auth />
+      </>
+    );
   }
 
   if (!companyId) {
-    return <CompanySelector />;
+    return (
+      <>
+        {splashScreen}
+        <CompanySelector />
+      </>
+    );
   }
 
   return (
     <APIProvider apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyAE5hZasEM931EdAJptCOcNAzxZT9JVvIU'}>
+      {splashScreen}
       <div 
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -147,9 +215,16 @@ function App() {
           </div>
 
           {/* Right: Settings */}
-          <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-1.5 transition-colors hover:bg-white/5 rounded-full" title="Settings">
-            <Settings size={18} />
-          </button>
+          <div className="flex items-center space-x-2">
+            {selectedJobId && weather && (
+              <span className="text-yellow-400 text-xs font-medium" title={weather.desc}>
+                🌡️ {weather.temp}°F
+              </span>
+            )}
+            <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-1.5 transition-colors hover:bg-white/5 rounded-full" title="Settings">
+              <Settings size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Carousel Slider (Mobile: 2-panel slider; Desktop: side-by-side flex) */}
@@ -184,6 +259,11 @@ function App() {
                 <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
               </div>
               <div className="flex items-center space-x-2">
+                {selectedJobId && weather && (
+                  <span className="text-yellow-400 text-xs font-medium mr-2" title={weather.desc}>
+                    🌡️ {weather.temp}°F {weather.desc}
+                  </span>
+                )}
                 <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
                   <Settings size={20} />
                 </button>

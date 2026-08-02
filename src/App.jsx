@@ -88,7 +88,7 @@ function App() {
   }
 
   return (
-    <APIProvider apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
+    <APIProvider apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyAE5hZasEM931EdAJptCOcNAzxZT9JVvIU'}>
       <div 
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}

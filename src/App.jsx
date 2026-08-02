@@ -15,7 +15,7 @@ import ProfileModal from './components/modals/ProfileModal';
 import UserGuideModal from './components/modals/UserGuideModal';
 import InviteModal from './components/modals/InviteModal';
 import ToastContainer from './components/layout/ToastContainer';
-import { Settings } from 'lucide-react';
+import { Settings, Map, List, FileText } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 
 function App() {
@@ -139,23 +139,27 @@ function App() {
         </div>
 
         {/* Floating View Switcher Pills in Header on Mobile */}
-        <div className="md:hidden fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center bg-slate-900/90 backdrop-blur-md border border-white/15 p-1 rounded-full shadow-2xl space-x-1">
+        <div className="md:hidden fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center bg-slate-950/85 backdrop-blur-xl border border-white/10 p-0.5 rounded-full shadow-lg space-x-0.5">
           <button 
             onClick={() => setMobileViewAndResize('map')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center space-x-1.5 ${
-              mobileView === 'map' ? 'bg-primary-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.5)]' : 'text-gray-400 hover:text-white'
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all flex items-center space-x-1 ${
+              mobileView === 'map' 
+                ? 'bg-primary-600 text-white shadow-[0_0_8px_rgba(14,165,233,0.5)]' 
+                : 'text-gray-400 hover:text-white'
             }`}
           >
-            <span>🗺️</span>
+            <Map size={13} />
             <span>Map</span>
           </button>
           <button 
             onClick={() => setMobileViewAndResize('sidebar')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center space-x-1.5 ${
-              mobileView === 'sidebar' ? 'bg-primary-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.5)]' : 'text-gray-400 hover:text-white'
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all flex items-center space-x-1 ${
+              mobileView === 'sidebar' 
+                ? 'bg-primary-600 text-white shadow-[0_0_8px_rgba(14,165,233,0.5)]' 
+                : 'text-gray-400 hover:text-white'
             }`}
           >
-            <span>📋</span>
+            {selectedJobId ? <FileText size={13} /> : <List size={13} />}
             <span>{selectedJobId ? 'Job Info' : 'List'}</span>
           </button>
         </div>

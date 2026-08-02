@@ -212,15 +212,6 @@ export default function MapArea() {
 
   return (
     <>
-      {/* Mobile Back to List Button */}
-      <button 
-        onClick={() => setMobileView('sidebar')}
-        className="md:hidden absolute top-4 left-4 z-20 bg-slate-900/90 text-white border border-white/15 px-3.5 py-2 rounded-full text-xs font-bold shadow-xl flex items-center space-x-1.5 backdrop-blur-md hover:bg-slate-800 transition-colors"
-        title="Back to List"
-      >
-        <span>← List</span>
-      </button>
-
       <Map
         defaultCenter={{ lat: 39.8283, lng: -98.5795 }}
         defaultZoom={4}

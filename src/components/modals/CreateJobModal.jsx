@@ -69,7 +69,7 @@ export default function CreateJobModal() {
   const [origin, setOrigin] = useState('');
   const [dests, setDests] = useState(['']);
   const [date, setDate] = useState('');
-  const [note, setNote] = useState('');
+  const [instructions, setInstructions] = useState([]);
   const [contactName, setContactName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [optimize, setOptimize] = useState(true);
@@ -87,14 +87,20 @@ export default function CreateJobModal() {
            setOrigin(editingJob.origin || '');
            setDests(editingJob.destinations || (editingJob.destination ? [editingJob.destination] : ['']));
            setDate(editingJob.jobDate || '');
-           setNote(editingJob.note || '');
+           if (editingJob.instructions) {
+              setInstructions(editingJob.instructions);
+           } else if (editingJob.note) {
+              setInstructions([{ id: Date.now().toString(), text: editingJob.note, target: 'all', isPriority: false }]);
+           } else {
+              setInstructions([]);
+           }
            setContactName(editingJob.contactName || '');
            setContactNumber(editingJob.contactNumber || '');
            setOptimize(editingJob.optimizeRoute !== false);
            setAssignedDriverIds((editingJob.assignedDrivers || []).map(d => d.id));
            setJobStatus(editingJob.status || 'unassigned');
         } else {
-           setName(''); setOrigin(''); setDests(['']); setDate(''); setNote('');
+           setName(''); setOrigin(''); setDests(['']); setDate(''); setInstructions([]);
            setContactName(''); setContactNumber(''); setAssignedDriverIds([]);
            setOptimize(true);
            setJobStatus('unassigned');
@@ -128,7 +134,8 @@ export default function CreateJobModal() {
         contactName: contactName.trim(),
         contactNumber: contactNumber.trim(),
         driversNeeded: assignedDrivers.length > 0 ? assignedDrivers.length : 1,
-        note: note.trim(),
+        instructions: instructions.map(i => ({ ...i, text: i.text.trim() })).filter(i => i.text),
+        note: '', // Maintain empty legacy note
         assignedDrivers,
       };
 
@@ -159,7 +166,7 @@ export default function CreateJobModal() {
   };
 
   const handleClose = () => {
-    const isDirty = name !== '' || origin !== '' || dests.some(d => d !== '') || date !== '' || note !== '' || contactName !== '' || contactNumber !== '' || assignedDriverIds.length > 0 || !optimize;
+    const isDirty = name !== '' || origin !== '' || dests.some(d => d !== '') || date !== '' || instructions.length > 0 || contactName !== '' || contactNumber !== '' || assignedDriverIds.length > 0 || !optimize;
     if (isDirty) {
       if (!window.confirm("You have unsaved changes. Are you sure you want to close without saving?")) {
         return;
@@ -268,8 +275,61 @@ export default function CreateJobModal() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Internal Notes</label>
-              <textarea value={note} onChange={e => setNote(e.target.value)} rows="3" className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"></textarea>
+              <div className="flex justify-between items-end mb-1">
+                 <label className="block text-sm font-bold text-gray-300 uppercase">Instructions & Notes</label>
+                 <button type="button" onClick={() => setInstructions([...instructions, { id: Date.now().toString() + Math.random(), text: '', target: 'all', isPriority: false }])} className="text-sm bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded focus-visible:ring-2 focus-visible:ring-primary-500 transition-colors">+ Add Instruction</button>
+              </div>
+              <div className="space-y-2">
+                 {instructions.length === 0 && <span className="text-gray-400 text-sm">No specific instructions.</span>}
+                 {instructions.map((inst, i) => (
+                    <div key={inst.id} className="flex flex-col space-y-2 bg-gray-800 p-2 rounded border border-gray-600 relative">
+                       <textarea 
+                          value={inst.text} 
+                          onChange={(e) => {
+                              const newInst = [...instructions];
+                              newInst[i].text = e.target.value;
+                              setInstructions(newInst);
+                          }} 
+                          rows="2" 
+                          placeholder="Instruction or note details..."
+                          className="w-full bg-gray-700 text-white rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600" 
+                       />
+                       <div className="flex justify-between items-center">
+                          <div className="flex space-x-3 items-center">
+                              <select 
+                                  value={inst.target}
+                                  onChange={(e) => {
+                                      const newInst = [...instructions];
+                                      newInst[i].target = e.target.value;
+                                      setInstructions(newInst);
+                                  }}
+                                  className="bg-gray-700 text-white rounded p-1 text-xs border border-gray-600 outline-none focus:ring-1 focus:ring-blue-500 max-w-[150px] truncate"
+                              >
+                                  <option value="all">All Team Members</option>
+                                  {assignedDriverIds.map(id => {
+                                      const d = activeDrivers.find(drv => drv.id === id);
+                                      return <option key={id} value={id}>{d ? d.name : id}</option>;
+                                  })}
+                              </select>
+                              <label className="flex items-center space-x-1 cursor-pointer">
+                                  <input 
+                                     type="checkbox" 
+                                     checked={inst.isPriority} 
+                                     onChange={(e) => {
+                                         const newInst = [...instructions];
+                                         newInst[i].isPriority = e.target.checked;
+                                         setInstructions(newInst);
+                                     }} 
+                                     className="rounded bg-gray-600 border-gray-500 text-red-500 focus:ring-red-500" 
+                                  />
+                                  <span className={`text-xs ${inst.isPriority ? 'text-red-400 font-bold' : 'text-gray-400'}`}>Priority</span>
+                              </label>
+                          </div>
+                          <button type="button" aria-label="Remove Instruction" onClick={() => setInstructions(instructions.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-400 text-xs font-bold bg-gray-700 px-2 py-1 rounded border border-gray-600 focus-visible:ring-2 focus-visible:ring-red-500 transition-colors">Remove</button>
+                       </div>
+                    </div>
+                 ))}
+              </div>
             </div>
 
             {isEditing && (

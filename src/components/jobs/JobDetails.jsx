@@ -5,7 +5,7 @@ import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
 import { db, storage } from '../../firebase';
 import { doc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp, query, onSnapshot, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { QrCode } from 'lucide-react';
+import { QrCode, FileText } from 'lucide-react';
 
 export default function JobDetails({ onClose }) {
   const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo, openModal } = useAppStore();
@@ -18,6 +18,8 @@ export default function JobDetails({ onClose }) {
   const [chatInput, setChatInput] = useState('');
   const [chatFile, setChatFile] = useState(null);
   const [sending, setSending] = useState(false);
+  const [noteInput, setNoteInput] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
   
   const [weather, setWeather] = useState(null);
 
@@ -139,6 +141,26 @@ export default function JobDetails({ onClose }) {
     });
   };
 
+  const handleSaveNote = async (e) => {
+    e.preventDefault();
+    if (!noteInput.trim()) return;
+    setSavingNote(true);
+    try {
+      await addDoc(collection(db, `companies/${companyId}/jobs/${job.id}/notes`), {
+        text: noteInput.trim(),
+        driverId: currentUser.id,
+        driverName: currentUser.name,
+        timestamp: serverTimestamp()
+      });
+      setNoteInput('');
+      addToast("Update logged successfully", "success");
+    } catch (error) {
+      console.error(error);
+      addToast("Failed to log update", "error");
+    }
+    setSavingNote(false);
+  };
+
   const handleSendChat = async (e) => {
     e.preventDefault();
     if (!chatInput.trim() && !chatFile) return;
@@ -246,7 +268,20 @@ export default function JobDetails({ onClose }) {
               </a>
             )}
         </div>
-        {job.note && <p className="text-gray-400 p-2 bg-gray-800 rounded italic text-xs mt-2">{job.note}</p>}
+        {job.instructions && job.instructions.length > 0 ? (
+            <div className="mt-2 space-y-1">
+                <strong className="text-gray-200 text-xs uppercase">Instructions:</strong>
+                {job.instructions.map((inst, i) => (
+                    <div key={i} className="text-gray-400 p-2 bg-gray-800 rounded text-xs flex items-start">
+                        {inst.isPriority && <span className="bg-red-500/20 text-red-400 px-1 py-0.5 rounded text-[10px] font-bold mr-2 uppercase border border-red-500/30">Priority</span>}
+                        {inst.target !== 'all' && <span className="bg-blue-500/20 text-blue-400 px-1 py-0.5 rounded text-[10px] font-bold mr-2 uppercase border border-blue-500/30">For: {activeDrivers.find(d => d.id === inst.target)?.name || inst.target}</span>}
+                        <span>{inst.text}</span>
+                    </div>
+                ))}
+            </div>
+        ) : (
+            job.note && <p className="text-gray-400 p-2 bg-gray-800 rounded italic text-xs mt-2">{job.note}</p>
+        )}
         <div className="text-gray-400 mt-2">
             <strong className="text-gray-200">Team ({job.assignedDrivers?.length || 0}/{job.driversNeeded}):</strong> 
             {job.assignedDrivers?.length > 0 ? (
@@ -306,6 +341,21 @@ export default function JobDetails({ onClose }) {
             </div>
         )}
         
+        {/* Driver Notes Form */}
+        <form onSubmit={handleSaveNote} className="mt-4 bg-gray-800 p-2 rounded border border-gray-700">
+            <label className="text-xs font-bold text-gray-300 uppercase block mb-1">Log Progress Update</label>
+            <div className="flex space-x-2">
+                <input 
+                    type="text" 
+                    value={noteInput} 
+                    onChange={e => setNoteInput(e.target.value)} 
+                    placeholder="E.g., Arrived at first stop..."
+                    className="flex-1 bg-gray-700 text-white rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"
+                />
+                <button type="submit" disabled={savingNote || !noteInput.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs font-semibold disabled:opacity-50">Log</button>
+            </div>
+        </form>
+        
         {/* Actions */}
         <div className="grid grid-cols-2 gap-3 mt-4">
            {canAssign && !isAssigned && <button onClick={() => updateStatus('in-progress', true)} className="bg-blue-600 hover:bg-blue-700 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Assign to Me</button>}
@@ -321,6 +371,15 @@ export default function JobDetails({ onClose }) {
            {isDispatchView && job.status !== 'archived' && <button onClick={() => updateStatus('archived')} className="bg-gray-700 hover:bg-gray-600 border border-gray-500 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Archive</button>}
            {isDispatchView && job.status === 'archived' && <button onClick={() => updateStatus(job.previousStatus || 'completed')} className="bg-gray-600 hover:bg-gray-500 border border-gray-400 text-white rounded py-2 text-xs font-semibold shadow focus-visible:ring-2 focus-visible:ring-white">Unarchive</button>}
            {isDispatchView && <button onClick={() => openModal('createJob', { editMode: true, job })} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 mt-2 focus-visible:ring-2 focus-visible:ring-white">Edit Job</button>}
+           
+           <button 
+             onClick={() => openModal('jobReport', { jobId: job.id })} 
+             className="bg-sky-600 hover:bg-sky-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 flex items-center justify-center space-x-1.5 focus-visible:ring-2 focus-visible:ring-white"
+           >
+             <FileText size={16} />
+             <span>View Job Report</span>
+           </button>
+           
             <button 
               onClick={() => openModal('invite', { jobId: job.id, jobName: job.jobName })} 
               className="bg-teal-600 hover:bg-teal-700 text-white rounded py-2 text-xs font-semibold shadow col-span-2 flex items-center justify-center space-x-1.5 focus-visible:ring-2 focus-visible:ring-white"

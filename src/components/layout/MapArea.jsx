@@ -3,6 +3,7 @@ import { Map, useMap, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-goog
 import { useAppStore } from '../../store/useAppStore';
 import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
 import { useDirections } from '../../hooks/useDirections';
+import RouteOutlineOverlay from './RouteOutlineOverlay';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -219,18 +220,26 @@ function MyLocationMarker() {
 
 function TrafficOverlay() {
   const map = useMap();
+  const showTrafficLayer = useAppStore(state => state.showTrafficLayer);
+
   useEffect(() => {
-    if (!map) return;
+    if (!map || !showTrafficLayer) return;
     const trafficLayer = new google.maps.TrafficLayer();
     trafficLayer.setMap(map);
     return () => trafficLayer.setMap(null);
-  }, [map]);
+  }, [map, showTrafficLayer]);
   return null;
 }
 
 export default function MapArea() {
   const apiKey = useAppStore(state => state.mapsApiKey) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   const setMobileView = useAppStore(state => state.setMobileView);
+
+  const routeInfo = useAppStore(state => state.routeInfo);
+  const routeStyle = useAppStore(state => state.routeStyle);
+  const setRouteStyle = useAppStore(state => state.setRouteStyle);
+  const showTrafficLayer = useAppStore(state => state.showTrafficLayer);
+  const setShowTrafficLayer = useAppStore(state => state.setShowTrafficLayer);
 
   if (!apiKey) {
     return (
@@ -257,9 +266,80 @@ export default function MapArea() {
         <MapController />
         <TrafficOverlay />
         <DirectionsComponent />
+        {routeInfo?.overviewPath && (
+          <RouteOutlineOverlay
+            path={routeInfo.overviewPath}
+            stepTraffics={routeInfo.stepTraffics}
+            routeColor={routeInfo.routeColor}
+            routeStyle={routeStyle}
+            jobId={routeInfo.jobId}
+          />
+        )}
         <DriverMarkers />
         <MyLocationMarker />
       </Map>
+
+      {/* Floating Map Controls (Top Right / Above Map Controls) */}
+      <div className="absolute top-4 right-14 z-20 flex flex-col gap-2 bg-gray-900/90 backdrop-blur-md p-1.5 rounded-xl border border-gray-700/60 shadow-2xl text-xs">
+        <div className="flex items-center justify-between gap-2 px-1 border-b border-gray-800 pb-1">
+          <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Route View</span>
+          <button
+            type="button"
+            onClick={() => setShowTrafficLayer(!showTrafficLayer)}
+            className={`px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-all ${
+              showTrafficLayer
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+            title="Toggle Live Google Maps Traffic Layer"
+          >
+            <span className={`w-2 h-2 rounded-full ${showTrafficLayer ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
+            Live Traffic
+          </button>
+        </div>
+
+        {/* Route Style Pills */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setRouteStyle('outlined')}
+            className={`flex-1 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+              routeStyle === 'outlined'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40 border border-blue-400/30'
+                : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80'
+            }`}
+            title="Outline with transparent center showing map road"
+          >
+            <span className="text-sm">🛣️</span> Outline Path
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRouteStyle('traffic')}
+            className={`flex-1 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+              routeStyle === 'traffic'
+                ? 'bg-amber-600 text-white shadow-md shadow-amber-900/40 border border-amber-400/30'
+                : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80'
+            }`}
+            title="Road conditions by traffic speed (Green, Orange, Red)"
+          >
+            <span className="text-sm">🚦</span> Traffic Status
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRouteStyle('solid')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+              routeStyle === 'solid'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40 border border-purple-400/30'
+                : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80'
+            }`}
+            title="Solid route highlight line"
+          >
+            <span className="text-sm">🟦</span> Solid
+          </button>
+        </div>
+      </div>
       
       {/* My Location Button */}
       <button 

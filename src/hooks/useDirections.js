@@ -198,12 +198,61 @@ export function useDirections({ map, selectedJobId, jobs }) {
         }
 
         let totalSeconds = 0;
+        let totalNormalSeconds = 0;
         let totalMeters = 0;
+        let stepTraffics = [];
+
         route.legs.forEach(leg => {
           const dur = leg.duration_in_traffic ? leg.duration_in_traffic.value : (leg.duration ? leg.duration.value : 0);
+          const normDur = leg.duration ? leg.duration.value : dur;
           totalSeconds += dur;
+          totalNormalSeconds += normDur;
           if (leg.distance) totalMeters += leg.distance.value;
+
+          const legRatio = normDur > 0 ? (dur / normDur) : 1;
+
+          if (leg.steps && leg.steps.length > 0) {
+            leg.steps.forEach(step => {
+              const sDur = step.duration_in_traffic ? step.duration_in_traffic.value : (step.duration ? step.duration.value : 0);
+              const sNorm = step.duration ? step.duration.value : sDur;
+              const ratio = sNorm > 0 ? (sDur / sNorm) : legRatio;
+
+              let stepColor = '#22c55e'; // Green: clear
+              if (ratio >= 1.25 || (sDur - sNorm) > 120) {
+                stepColor = '#ef4444'; // Red: heavy congestion
+              } else if (ratio >= 1.10 || (sDur - sNorm) > 30) {
+                stepColor = '#f97316'; // Orange: moderate delays
+              }
+
+              if (step.path && step.path.length > 0) {
+                stepTraffics.push({
+                  path: step.path,
+                  color: stepColor,
+                  instructions: step.instructions ? step.instructions.replace(/<[^>]*>?/gm, '') : '',
+                });
+              }
+            });
+          }
         });
+
+        // Fallback stepTraffics if step-level paths were missing
+        if (stepTraffics.length === 0 && path) {
+          stepTraffics.push({ path, color: '#22c55e' });
+        }
+
+        const delaySeconds = Math.max(0, totalSeconds - totalNormalSeconds);
+        const delayMinutes = Math.round(delaySeconds / 60);
+
+        let trafficStatus = 'green';
+        let trafficText = 'Clear Road Conditions (Fastest)';
+
+        if (delayMinutes > 5 || (totalNormalSeconds > 0 && totalSeconds / totalNormalSeconds >= 1.25)) {
+          trafficStatus = 'red';
+          trafficText = `Heavy Congestion (+${delayMinutes} min delay)`;
+        } else if (delayMinutes > 1 || (totalNormalSeconds > 0 && totalSeconds / totalNormalSeconds >= 1.10)) {
+          trafficStatus = 'orange';
+          trafficText = `Moderate Delays (+${delayMinutes} min delay)`;
+        }
 
         const totalMiles = (totalMeters * 0.000621371).toFixed(1);
         const h = Math.floor(totalSeconds / 3600);
@@ -222,10 +271,17 @@ export function useDirections({ map, selectedJobId, jobs }) {
         }).filter(Boolean);
 
         setRouteInfo({
+          jobId: job.id,
+          routeColor: color,
           distance: `${totalMiles} mi`,
           duration: timeStr,
           destinationCoords: destCoords,
-          steps: plainTextSteps
+          steps: plainTextSteps,
+          trafficStatus,
+          trafficText,
+          delayMinutes,
+          overviewPath: path,
+          stepTraffics
         });
       }
     }).catch(e => {

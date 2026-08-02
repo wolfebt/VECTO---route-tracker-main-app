@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 export default function JobDetails({ onClose }) {
-  const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo, openModal } = useAppStore();
+  const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo, routeStyle, setRouteStyle, openModal } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
   const jobs = useJobs();
   const activeDrivers = useActiveDrivers();
@@ -255,6 +255,45 @@ export default function JobDetails({ onClose }) {
                 {(job.destinations || [job.destination]).map((d, i) => <li key={i}>{d}</li>)}
             </ul>
         </div>
+
+        {/* Live Road Conditions & Traffic Status */}
+        {routeInfo && (
+          <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 mt-2 ${
+            routeInfo.trafficStatus === 'red'
+              ? 'bg-red-950/40 border-red-500/40 text-red-300'
+              : routeInfo.trafficStatus === 'orange'
+              ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+              : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="text-base">
+                {routeInfo.trafficStatus === 'red' ? '🔴' : routeInfo.trafficStatus === 'orange' ? '🟠' : '🟢'}
+              </span>
+              <div>
+                <p className="font-bold">{routeInfo.trafficText || 'Road Conditions'}</p>
+                <p className="text-[11px] opacity-80">{routeInfo.duration} • {routeInfo.distance}</p>
+              </div>
+            </div>
+            <div className="flex gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setRouteStyle('outlined')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${routeStyle === 'outlined' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                title="Outline Path (Transparent center showing map road)"
+              >
+                Outline
+              </button>
+              <button
+                type="button"
+                onClick={() => setRouteStyle('traffic')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${routeStyle === 'traffic' ? 'bg-amber-600 text-white shadow-sm' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                title="Traffic Colors (Green, Orange, Red)"
+              >
+                Traffic
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex space-x-2 mt-2">
             {getNavigateLink() !== '#' && (
               <a href={getNavigateLink()} target="_blank" rel="noopener noreferrer" className="flex-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors">

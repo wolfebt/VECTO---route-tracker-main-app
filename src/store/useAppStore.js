@@ -46,6 +46,11 @@ export const useAppStore = create((set) => ({
   routeInfo: null,
   setRouteInfo: (info) => set({ routeInfo: info }),
 
+  routeStyle: 'outlined', // 'outlined' (transparent center) | 'traffic' (green/orange/red outline) | 'solid'
+  setRouteStyle: (style) => set({ routeStyle: style }),
+  showTrafficLayer: true,
+  setShowTrafficLayer: (show) => set({ showTrafficLayer: show }),
+
   isSharingLocation: true,
   setIsSharingLocation: (isSharing) => set({ isSharingLocation: isSharing }),
 

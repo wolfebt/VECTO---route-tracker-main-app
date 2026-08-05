@@ -77,6 +77,7 @@ export default function JobDetails({ onClose }) {
 
   const isAssigned = (job.assignedDrivers || []).some(d => d.id === currentUser.id);
   const canAssign = job.status !== 'completed' && job.status !== 'archived';
+  const hasDriverFinished = (job.completedDrivers || []).includes(currentUser.id);
 
   const updateStatus = async (status, isAssigning = false, isUnassigning = false) => {
     let updates = { status };
@@ -87,6 +88,12 @@ export default function JobDetails({ onClose }) {
     } else if (isUnassigning) {
         const currentDrivers = job.assignedDrivers || [];
         updates.assignedDrivers = currentDrivers.filter(d => d.id !== currentUser.id);
+        
+        const currentCompleted = job.completedDrivers || [];
+        if (currentCompleted.includes(currentUser.id)) {
+            updates.completedDrivers = currentCompleted.filter(id => id !== currentUser.id);
+        }
+
         if (updates.assignedDrivers.length === 0 && job.status !== 'completed') {
             updates.status = 'unassigned';
         } else {
@@ -105,6 +112,25 @@ export default function JobDetails({ onClose }) {
     await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), updates);
   };
 
+  const handleDriverFinish = async () => {
+    const completedDrivers = job.completedDrivers || [];
+    if (completedDrivers.includes(currentUser.id)) return;
+    
+    const newCompleted = [...completedDrivers, currentUser.id];
+    const assignedCount = job.assignedDrivers?.length || 1;
+    
+    let updates = {
+        completedDrivers: arrayUnion(currentUser.id)
+    };
+    
+    if (newCompleted.length >= assignedCount) {
+        updates.status = 'completed';
+        updates.completedAt = serverTimestamp();
+    }
+    
+    await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), updates);
+  };
+
   const handleToggleDriver = async (driverId, isAdding) => {
     const driver = activeDrivers.find(d => d.id === driverId);
     let updates = {};
@@ -114,6 +140,12 @@ export default function JobDetails({ onClose }) {
     } else {
         const currentDrivers = job.assignedDrivers || [];
         updates.assignedDrivers = currentDrivers.filter(d => d.id !== driverId);
+
+        const currentCompleted = job.completedDrivers || [];
+        if (currentCompleted.includes(driverId)) {
+            updates.completedDrivers = currentCompleted.filter(id => id !== driverId);
+        }
+
         if (updates.assignedDrivers.length === 0 && job.status !== 'completed') {
             updates.status = 'unassigned';
         }
@@ -329,11 +361,17 @@ export default function JobDetails({ onClose }) {
                    {job.assignedDrivers.map(d => {
                       const activeInfo = activeDrivers.find(ad => ad.id === d.id);
                       const isStale = activeInfo && activeInfo.timestamp && activeInfo.timestamp.toMillis() < Date.now() - (5 * 60 * 1000);
+                      const isDriverFinished = (job.completedDrivers || []).includes(d.id);
+
                       let statusColor = 'bg-gray-500'; // Offline
                       let statusText = 'Offline';
                       let dotStyle = activeInfo?.color ? { backgroundColor: activeInfo.color } : {};
                       
-                      if (activeInfo && !isStale) {
+                      if (isDriverFinished) {
+                          statusText = 'Finished';
+                          statusColor = 'bg-emerald-500';
+                          dotStyle = {};
+                      } else if (activeInfo && !isStale) {
                           statusText = 'Available';
                           const isDriving = jobs.some(j => j.status === 'in-progress' && j.assignedDrivers?.some(ad => ad.id === d.id));
                           if (isDriving) statusText = 'Driving';
@@ -345,10 +383,10 @@ export default function JobDetails({ onClose }) {
                           }
                       }
                       return (
-                          <div key={d.id} className="flex items-center space-x-2 bg-gray-800 px-2 py-1 rounded border border-gray-700">
+                          <div key={d.id} className={`flex items-center space-x-2 ${isDriverFinished ? 'bg-emerald-900/40 border-emerald-700/50' : 'bg-gray-800 border-gray-700'} px-2 py-1 rounded border`}>
                              <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} style={dotStyle}></span>
                              <span className="text-xs text-gray-200 font-medium truncate max-w-[80px]">{d.name}</span>
-                             <span className="text-xs text-gray-400">({statusText})</span>
+                             <span className={`text-xs ${isDriverFinished ? 'text-emerald-400' : 'text-gray-400'}`}>({statusText})</span>
                           </div>
                       );
                    })}
@@ -471,13 +509,13 @@ export default function JobDetails({ onClose }) {
                     </button>
                   )}
 
-                  {isAssigned && job.status !== 'pending-completion' && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
+                  {isAssigned && !hasDriverFinished && job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled' && (
                     <button
-                      onClick={() => updateStatus('pending-completion')}
+                      onClick={handleDriverFinish}
                       className="w-full bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-green-400"
                     >
-                      <Clock size={16} />
-                      <span>Request Completion</span>
+                      <CheckCircle2 size={16} />
+                      <span>{job.assignedDrivers?.length > 1 ? "Mark My Part Complete" : "Complete Job"}</span>
                     </button>
                   )}
 
@@ -561,6 +599,14 @@ export default function JobDetails({ onClose }) {
                   >
                     <MessageSquarePlus size={16} />
                     <span>Log Progress Update</span>
+                  </button>
+
+                  <button
+                    onClick={() => openModal('logExpense', { jobId: job.id, jobName: job.jobName })}
+                    className="w-full bg-orange-600/20 hover:bg-orange-600/30 text-orange-300 border border-orange-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-orange-400"
+                  >
+                    <FileText size={16} />
+                    <span>Log Expense</span>
                   </button>
 
                   <button

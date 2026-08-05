@@ -12,6 +12,7 @@ export default function JobReportModal() {
   
   const [messages, setMessages] = useState([]);
   const [driverNotes, setDriverNotes] = useState([]);
+  const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const modalData = modals.jobReport;
@@ -39,6 +40,14 @@ export default function JobReportModal() {
             notesSnap.forEach(d => nts.push({ id: d.id, ...d.data() }));
             nts.sort((a,b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)); // Descending for timeline
             setDriverNotes(nts);
+
+            // Fetch Expenses
+            const expQ = query(collection(db, `companies/${companyId}/jobs/${jobId}/expenses`));
+            const expSnap = await getDocs(expQ);
+            const exps = [];
+            expSnap.forEach(d => exps.push({ id: d.id, ...d.data() }));
+            exps.sort((a,b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+            setExpenses(exps);
         } catch (error) {
             console.error("Error fetching report data", error);
         }
@@ -55,6 +64,13 @@ export default function JobReportModal() {
       const name = note.driverName || note.driverId || 'Unknown';
       if (!acc[name]) acc[name] = [];
       acc[name].push(note);
+      return acc;
+  }, {});
+
+  const groupedExpenses = expenses.reduce((acc, exp) => {
+      const name = exp.driverName || exp.driverId || 'Unknown';
+      if (!acc[name]) acc[name] = [];
+      acc[name].push(exp);
       return acc;
   }, {});
 
@@ -158,9 +174,44 @@ export default function JobReportModal() {
                 )}
             </section>
 
-            {/* Section 3: Route Details */}
+            {/* Section 3: Driver Expenses */}
+            <section className="mb-8">
+                <h2 className="text-xl font-bold bg-gray-200 p-2 border-l-4 border-gray-800 mb-4">3. Driver Expenses</h2>
+                {loading ? (
+                    <p className="text-gray-500 italic">Loading expenses...</p>
+                ) : expenses.length === 0 ? (
+                    <p className="text-gray-500 italic">No expenses logged for this job.</p>
+                ) : (
+                    <div className="space-y-6">
+                        {Object.entries(groupedExpenses).map(([driverName, drvExpenses]) => {
+                            const totalAmount = drvExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+                            return (
+                                <div key={driverName}>
+                                    <h3 className="font-bold text-lg mb-2 text-orange-900 border-b border-gray-300 pb-1 flex justify-between">
+                                        <span>{driverName}</span>
+                                        <span>Total: ${totalAmount.toFixed(2)}</span>
+                                    </h3>
+                                    <ul className="space-y-2">
+                                        {drvExpenses.map(exp => (
+                                            <li key={exp.id} className="bg-gray-50 p-2 rounded border border-gray-200 flex justify-between items-center text-sm">
+                                                <div>
+                                                    <span className="font-bold uppercase text-[10px] mr-2 text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{exp.type}</span>
+                                                    <span className="text-gray-800">{exp.description || 'No description'}</span>
+                                                </div>
+                                                <span className="font-bold text-gray-900">${parseFloat(exp.amount || 0).toFixed(2)}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </section>
+
+            {/* Section 4: Route Details */}
             <section className="mb-8" style={{ pageBreakInside: 'avoid' }}>
-                <h2 className="text-xl font-bold bg-gray-200 p-2 border-l-4 border-gray-800 mb-4">3. Route Details</h2>
+                <h2 className="text-xl font-bold bg-gray-200 p-2 border-l-4 border-gray-800 mb-4">4. Route Details</h2>
                 {routeInfo ? (
                     <div>
                         <div className="flex space-x-8 mb-4">
@@ -183,9 +234,9 @@ export default function JobReportModal() {
                 )}
             </section>
 
-            {/* Section 4: Messages */}
+            {/* Section 5: Messages */}
             <section style={{ pageBreakInside: 'auto' }}>
-                <h2 className="text-xl font-bold bg-gray-200 p-2 border-l-4 border-gray-800 mb-4">4. Job Chat History</h2>
+                <h2 className="text-xl font-bold bg-gray-200 p-2 border-l-4 border-gray-800 mb-4">5. Job Chat History</h2>
                 {loading ? (
                     <p className="text-gray-500 italic">Loading messages...</p>
                 ) : messages.length === 0 ? (

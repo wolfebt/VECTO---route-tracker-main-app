@@ -193,12 +193,33 @@ export default function JobReportModal() {
                                     </h3>
                                     <ul className="space-y-2">
                                         {drvExpenses.map(exp => (
-                                            <li key={exp.id} className="bg-gray-50 p-2 rounded border border-gray-200 flex justify-between items-center text-sm">
-                                                <div>
-                                                    <span className="font-bold uppercase text-[10px] mr-2 text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{exp.type}</span>
-                                                    <span className="text-gray-800">{exp.description || 'No description'}</span>
+                                            <li key={exp.id} className="bg-gray-50 p-2.5 rounded border border-gray-200 flex justify-between items-center text-sm">
+                                                <div className="flex items-center space-x-2.5">
+                                                    {exp.receiptUrl && (
+                                                      <img 
+                                                        src={exp.receiptUrl} 
+                                                        alt="Receipt" 
+                                                        onClick={() => window.open(exp.receiptUrl, '_blank')}
+                                                        className="w-10 h-10 rounded object-cover border border-gray-300 hover:opacity-80 cursor-pointer shrink-0" 
+                                                        title="Click to view full receipt"
+                                                      />
+                                                    )}
+                                                    <div>
+                                                      <div className="flex items-center space-x-1.5">
+                                                        <span className="font-bold uppercase text-[10px] text-gray-700 bg-gray-200 px-1.5 py-0.5 rounded">{exp.type}</span>
+                                                        {exp.status && (
+                                                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                                                            exp.status === 'approved' || exp.status === 'reimbursed' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                                                            exp.status === 'rejected' ? 'bg-red-100 text-red-800 border border-red-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                                          }`}>
+                                                            {exp.status}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                      <span className="text-gray-800 text-xs mt-0.5 block">{exp.description || 'No description'}</span>
+                                                    </div>
                                                 </div>
-                                                <span className="font-bold text-gray-900">${parseFloat(exp.amount || 0).toFixed(2)}</span>
+                                                <span className="font-bold text-gray-900 font-mono">${parseFloat(exp.amount || 0).toFixed(2)}</span>
                                             </li>
                                         ))}
                                     </ul>

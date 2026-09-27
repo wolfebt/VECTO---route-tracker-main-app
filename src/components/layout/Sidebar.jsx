@@ -3,10 +3,12 @@ import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
 import JobsList from '../jobs/JobsList';
 import DriversList from '../jobs/DriversList';
-import { QrCode, Share2 } from 'lucide-react';
+import { QrCode, Share2, Users, DollarSign, LayoutDashboard } from 'lucide-react';
 
 export default function Sidebar() {
   const isDispatchView = useAppStore(state => state.isDispatchView);
+  const mainView = useAppStore(state => state.mainView);
+  const setMainView = useAppStore(state => state.setMainView);
   const activeJobTab = useAppStore(state => state.activeJobTab);
   const setActiveJobTab = useAppStore(state => state.setActiveJobTab);
   const companyName = useAppStore(state => state.companyName);
@@ -86,12 +88,43 @@ export default function Sidebar() {
       </div>
 
       {isDispatchView && (
-        <div className="mb-6 px-4">
-          <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-3">Management</h2>
+        <div className="mb-6 px-4 space-y-2">
+          <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-2">Management</h2>
           <button onClick={() => openModal('createJob')} className="w-full btn-primary flex items-center justify-center space-x-2">
             <span className="text-xl leading-none">+</span>
             <span>Create New Job</span>
           </button>
+          
+          <button 
+            onClick={() => setMainView(mainView === 'operations' ? 'map' : 'operations')}
+            className={`w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all shadow-sm cursor-pointer ${
+              mainView === 'operations'
+                ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.3)]'
+                : 'bg-slate-800/80 hover:bg-slate-700/80 text-purple-300 border-slate-700 hover:border-purple-500/40'
+            }`}
+          >
+            <LayoutDashboard size={14} className="text-purple-400" />
+            <span>{mainView === 'operations' ? 'Switch to Map View' : 'Operations Board'}</span>
+          </button>
+
+          <div className="grid grid-cols-2 gap-2 pt-0.5">
+            <button 
+              onClick={() => openModal('driverRoster')}
+              className="flex items-center justify-center space-x-1.5 py-2 px-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-bold text-sky-300 transition-colors cursor-pointer shadow-sm"
+              title="Driver Roster & Rotation"
+            >
+              <Users size={14} className="text-sky-400" />
+              <span>Driver Roster</span>
+            </button>
+            <button 
+              onClick={() => openModal('expenseLedger')}
+              className="flex items-center justify-center space-x-1.5 py-2 px-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-bold text-orange-300 transition-colors cursor-pointer shadow-sm"
+              title="Expense Ledger & Approvals"
+            >
+              <DollarSign size={14} className="text-orange-400" />
+              <span>Expense Ledger</span>
+            </button>
+          </div>
         </div>
       )}
 

@@ -213,6 +213,24 @@ export default function JobDetails({ onClose }) {
     return link;
   };
 
+  const handleStartNavigation = (e) => {
+    const dests = job.destinations || (job.destination ? [job.destination] : []);
+    if (dests.length === 0) return;
+    const finalDest = dests[dests.length - 1];
+
+    // Android Auto direct intent check
+    const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    if (isAndroid && dests.length === 1) {
+      // Direct Turn-by-Turn Intent (optimally launches Android Auto projection)
+      window.location.href = `google.navigation:q=${encodeURIComponent(finalDest)}&mode=d`;
+      setTimeout(() => {
+        const fallback = getNavigateLink();
+        if (fallback !== '#') window.open(fallback, '_blank');
+      }, 700);
+      e.preventDefault();
+    }
+  };
+
   const getStreetViewLink = () => {
     if (!routeInfo?.destinationCoords) return '#';
     return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${routeInfo.destinationCoords.lat},${routeInfo.destinationCoords.lng}`;
@@ -336,7 +354,14 @@ export default function JobDetails({ onClose }) {
         )}
         <div className="flex space-x-2 mt-2">
             {getNavigateLink() !== '#' && (
-              <a href={getNavigateLink()} target="_blank" rel="noopener noreferrer" className="flex-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors">
+              <a 
+                href={getNavigateLink()} 
+                onClick={handleStartNavigation}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="flex-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors"
+                title="Launch turn-by-turn navigation (supports Android Auto)"
+              >
                  <span className="mr-1">🧭</span> Navigate
               </a>
             )}

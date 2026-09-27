@@ -36,6 +36,8 @@ export const useAppStore = create((set) => ({
   },
 
   // UI & Job State
+  mainView: 'map', // 'map' | 'operations'
+  setMainView: (view) => set({ mainView: view }),
   mobileView: 'sidebar', // 'sidebar' | 'map'
   setMobileView: (view) => set({ mobileView: view }),
   activeJobTab: 'current',
@@ -70,6 +72,8 @@ export const useAppStore = create((set) => ({
     invite: false,
     adminSettings: false,
     companySettings: false,
+    driverRoster: false,
+    expenseLedger: false,
     createJob: false,
     jobReport: false,
     logProgress: false,

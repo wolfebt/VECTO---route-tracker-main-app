@@ -62,6 +62,17 @@ service cloud.firestore {
         match /chat/{chatId} {
           allow read, write: if isCompanyMember(companyId);
         }
+
+        // Job Notes Subcollection
+        match /notes/{noteId} {
+          allow read, write: if isCompanyMember(companyId);
+        }
+
+        // Job Expenses Subcollection
+        match /expenses/{expenseId} {
+          allow read, create: if isCompanyMember(companyId);
+          allow update, delete: if isDispatcher(companyId) || (isAuthenticated() && resource.data.driverId == request.auth.uid);
+        }
       }
 
       // Active Drivers Subcollection

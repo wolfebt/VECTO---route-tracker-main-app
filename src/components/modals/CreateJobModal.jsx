@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
-import { useActiveDrivers } from '../../hooks/useFirebase';
+import { useActiveDrivers, useCompany } from '../../hooks/useFirebase';
 import { db } from '../../firebase';
 import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
+import { Star, Zap } from 'lucide-react';
 
 // Helper component for Autocomplete inputs
 const AutocompleteInput = ({ value, onChange, placeholder, className, required }) => {
@@ -62,7 +63,8 @@ const AutocompleteInput = ({ value, onChange, placeholder, className, required }
 export default function CreateJobModal() {
   const { modals, closeModal, companyId, currentUser } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
-  const activeDrivers = useActiveDrivers(); // Or fetch all users in the company if needed
+  const activeDrivers = useActiveDrivers();
+  const { members } = useCompany();
   
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
@@ -79,6 +81,35 @@ export default function CreateJobModal() {
   const modalData = modals.createJob;
   const isEditing = typeof modalData === 'object' && modalData.editMode === true;
   const editingJob = isEditing ? modalData.job : null;
+
+  // Sorted roster for next-in-line dispatch
+  const sortedRoster = [...members].sort((a, b) => {
+    const aPriority = !!a.isPriorityDriver;
+    const bPriority = !!b.isPriorityDriver;
+    if (aPriority !== bPriority) return aPriority ? -1 : 1;
+    const dutyWeight = { on_duty: 3, break: 2, off_duty: 1 };
+    const aDuty = dutyWeight[a.onDutyStatus || 'on_duty'] || 3;
+    const bDuty = dutyWeight[b.onDutyStatus || 'on_duty'] || 3;
+    if (aDuty !== bDuty) return bDuty - aDuty;
+    const aOrder = typeof a.rosterOrder === 'number' ? a.rosterOrder : 999;
+    const bOrder = typeof b.rosterOrder === 'number' ? b.rosterOrder : 999;
+    return aOrder - bOrder;
+  });
+
+  const nextRosterDriver = sortedRoster.find(m => (m.onDutyStatus || 'on_duty') === 'on_duty');
+
+  const handleSelectNextInRoster = () => {
+    if (!nextRosterDriver) {
+      addToast("No on-duty drivers available in the roster", "info");
+      return;
+    }
+    if (!assignedDriverIds.includes(nextRosterDriver.id)) {
+      setAssignedDriverIds([...assignedDriverIds, nextRosterDriver.id]);
+      addToast(`Assigned ${nextRosterDriver.name || nextRosterDriver.email} from Roster`, "success");
+    } else {
+      addToast(`${nextRosterDriver.name || nextRosterDriver.email} is already selected`, "info");
+    }
+  };
 
   useEffect(() => {
      if (modals.createJob) {
@@ -121,9 +152,13 @@ export default function CreateJobModal() {
     setLoading(true);
     try {
       const assignedDrivers = assignedDriverIds.map(id => {
-         const driver = activeDrivers.find(d => d.id === id);
-         return { id, name: driver ? driver.name : id };
+         const driver = activeDrivers.find(d => d.id === id) || members.find(m => m.id === id);
+         return { id, name: driver ? (driver.name || driver.email) : id };
       });
+
+      const initialStatus = isEditing 
+        ? jobStatus 
+        : (assignedDrivers.length > 0 ? 'assigned' : 'unassigned');
 
       const jobData = {
         jobName: name.trim(),
@@ -142,22 +177,32 @@ export default function CreateJobModal() {
       if (isEditing) {
         await updateDoc(doc(db, `companies/${companyId}/jobs`, editingJob.id), {
            ...jobData,
-           status: jobStatus
+           status: initialStatus
         });
         addToast("Job updated successfully.", "success");
       } else {
         await addDoc(collection(db, `companies/${companyId}/jobs`), {
           ...jobData,
-          status: assignedDrivers.length > 0 ? 'in-progress' : 'unassigned',
+          status: initialStatus,
           createdBy: currentUser.id,
           createdAt: serverTimestamp(),
           archived: false
         });
         addToast("Job created successfully.", "success");
       }
+
+      // Update lastDispatchedAt for assigned drivers
+      for (const dId of assignedDriverIds) {
+        try {
+          await updateDoc(doc(db, `companies/${companyId}/members/${dId}`), {
+            lastDispatchedAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.warn("Could not update lastDispatchedAt for driver:", dId, e);
+        }
+      }
       
       closeModal('createJob');
-      // Form reset is handled by useEffect when modal closes/opens
     } catch (err) {
       console.error(err);
       addToast("Failed to create job", "error");
@@ -254,23 +299,61 @@ export default function CreateJobModal() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Assign Team</label>
-              <div className="w-full bg-gray-700 rounded p-2 border border-gray-600 max-h-32 overflow-y-auto space-y-1">
-                 {activeDrivers.length === 0 && <span className="text-gray-400 text-sm">No active drivers available.</span>}
-                 {activeDrivers.map(d => (
-                    <label key={d.id} className="flex items-center space-x-2 cursor-pointer">
-                       <input 
-                          type="checkbox" 
-                          checked={assignedDriverIds.includes(d.id)}
-                          onChange={e => {
-                             if (e.target.checked) setAssignedDriverIds([...assignedDriverIds, d.id]);
-                             else setAssignedDriverIds(assignedDriverIds.filter(id => id !== d.id));
-                          }}
-                          className="rounded bg-gray-600 border-gray-500 text-blue-500 focus:ring-blue-500" 
-                       />
-                       <span className="text-sm text-gray-200">{d.name || d.id}</span>
-                    </label>
-                 ))}
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="block text-sm font-bold text-gray-300 uppercase">Assign Team</label>
+                {nextRosterDriver && (
+                  <button
+                    type="button"
+                    onClick={handleSelectNextInRoster}
+                    className="flex items-center space-x-1.5 text-xs bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 border border-sky-500/40 px-2.5 py-1 rounded-lg transition-colors font-medium cursor-pointer"
+                    title={`Next up in rotation: ${nextRosterDriver.name || nextRosterDriver.email}`}
+                  >
+                    <Zap size={12} className="text-amber-400 fill-amber-400" />
+                    <span>Next in Roster ({nextRosterDriver.name || nextRosterDriver.email})</span>
+                  </button>
+                )}
+              </div>
+              <div className="w-full bg-gray-700/80 rounded-xl p-2 border border-gray-600 max-h-36 overflow-y-auto space-y-1">
+                 {members.length === 0 && <span className="text-gray-400 text-xs italic">No team members registered.</span>}
+                 {members.map(d => {
+                    const isPriority = !!d.isPriorityDriver;
+                    const duty = d.onDutyStatus || 'on_duty';
+                    const activeLoc = activeDrivers.find(ad => ad.id === d.id);
+                    const isAssigned = assignedDriverIds.includes(d.id);
+                    return (
+                      <label key={d.id} className="flex items-center justify-between p-1.5 hover:bg-gray-600/40 rounded-lg cursor-pointer transition-colors">
+                         <div className="flex items-center space-x-2 truncate">
+                           <input 
+                              type="checkbox" 
+                              checked={isAssigned}
+                              onChange={e => {
+                                 if (e.target.checked) setAssignedDriverIds([...assignedDriverIds, d.id]);
+                                 else setAssignedDriverIds(assignedDriverIds.filter(id => id !== d.id));
+                              }}
+                              className="rounded bg-gray-600 border-gray-500 text-blue-500 focus:ring-blue-500" 
+                           />
+                           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color || '#22c55e' }} />
+                           <span className="text-xs text-gray-200 font-semibold truncate">{d.name || d.email}</span>
+                           {isPriority && (
+                             <span className="text-amber-400 text-xs flex items-center" title="Priority Driver">
+                               <Star size={11} className="fill-amber-400" />
+                             </span>
+                           )}
+                         </div>
+                         <div className="flex items-center space-x-1.5 shrink-0">
+                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                             duty === 'on_duty' ? 'bg-emerald-900/60 text-emerald-300' :
+                             duty === 'break' ? 'bg-amber-900/60 text-amber-300' : 'bg-gray-800 text-gray-400'
+                           }`}>
+                             {duty === 'on_duty' ? 'On Duty' : duty === 'break' ? 'Break' : 'Off Duty'}
+                           </span>
+                           {activeLoc && (
+                             <span className="text-[10px] bg-sky-900/60 text-sky-300 px-1 py-0.5 rounded font-mono">GPS</span>
+                           )}
+                         </div>
+                      </label>
+                    );
+                 })}
               </div>
             </div>
 

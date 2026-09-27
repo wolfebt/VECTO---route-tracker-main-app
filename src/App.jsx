@@ -21,12 +21,15 @@ import InviteModal from './components/modals/InviteModal';
 import JobReportModal from './components/modals/JobReportModal';
 import LogProgressModal from './components/modals/LogProgressModal';
 import LogExpenseModal from './components/modals/LogExpenseModal';
+import DriverRosterModal from './components/modals/DriverRosterModal';
+import ExpenseLedgerModal from './components/modals/ExpenseLedgerModal';
+import OperationsBoard from './components/operations/OperationsBoard';
 import ToastContainer from './components/layout/ToastContainer';
-import { Settings, Map, List, FileText } from 'lucide-react';
+import { Settings, Map, List, FileText, LayoutDashboard } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 
 function App() {
-  const { isAuthReady, mobileView, setMobileView, showSplash, fadeSplash, setShowSplash, setFadeSplash } = useAppStore();
+  const { isAuthReady, mobileView, setMobileView, showSplash, fadeSplash, setShowSplash, setFadeSplash, mainView, setMainView } = useAppStore();
   const currentUser = useAppStore(state => state.currentUser);
   const companyId = useAppStore(state => state.companyId);
   const selectedJobId = useAppStore(state => state.selectedJobId);
@@ -194,9 +197,12 @@ function App() {
           {/* Center: Thin View Switcher Segment Control */}
           <div className="flex items-center bg-slate-900/90 border border-white/15 p-0.5 rounded-lg shadow-inner">
             <button 
-              onClick={() => setMobileViewAndResize('map')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition-all duration-200 flex items-center space-x-1.5 ${
-                mobileView === 'map' 
+              onClick={() => {
+                setMainView('map');
+                setMobileViewAndResize('map');
+              }}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all duration-200 flex items-center space-x-1 ${
+                mainView === 'map' && mobileView === 'map' 
                   ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-sm' 
                   : 'text-slate-400 hover:text-white'
               }`}
@@ -205,15 +211,30 @@ function App() {
               <span>Map</span>
             </button>
             <button 
-              onClick={() => setMobileViewAndResize('sidebar')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition-all duration-200 flex items-center space-x-1.5 ${
-                mobileView === 'sidebar' 
+              onClick={() => {
+                setMainView('map');
+                setMobileViewAndResize('sidebar');
+              }}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all duration-200 flex items-center space-x-1 ${
+                mainView === 'map' && mobileView === 'sidebar' 
                   ? 'bg-gradient-to-r from-teal-500 to-emerald-600 text-white shadow-sm' 
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               {selectedJobId ? <FileText size={13} /> : <List size={13} />}
-              <span>{selectedJobId ? 'Job Info' : 'Jobs'}</span>
+              <span>{selectedJobId ? 'Info' : 'Jobs'}</span>
+            </button>
+            <button 
+              onClick={() => setMainView(mainView === 'operations' ? 'map' : 'operations')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all duration-200 flex items-center space-x-1 ${
+                mainView === 'operations'
+                  ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-sm' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Toggle Operations Board"
+            >
+              <LayoutDashboard size={13} />
+              <span>Ops</span>
             </button>
           </div>
 
@@ -230,62 +251,77 @@ function App() {
           </div>
         </div>
 
-        {/* Carousel Slider (Mobile: 2-panel slider; Desktop: side-by-side flex) */}
-        <div 
-          className={`flex h-full w-[200vw] md:w-full transition-transform duration-300 ease-out pt-12 md:pt-0 ${
-            mobileView === 'sidebar' ? '-translate-x-[100vw] md:translate-x-0' : 'translate-x-0'
-          }`}
-        >
-          {/* Panel 1 (Left Side on Mobile / Main Map on Desktop): Map Area */}
-          <div className="w-[100vw] md:w-auto md:flex-1 relative z-0 h-full shrink-0 md:shrink">
-            <MapArea />
-            {selectedJobId && (
-              <div className="hidden md:block">
-                <JobDetails />
-              </div>
-            )}
+        {/* Main Content Area */}
+        {mainView === 'operations' ? (
+          <div className="h-full pt-12 md:pt-0">
+            <OperationsBoard />
           </div>
-          
-          {/* Panel 2 (Right Side on Mobile / Right Sidebar on Desktop): Job Info & Sidebar */}
-          <div className="w-[100vw] md:w-96 glass-panel z-10 shrink-0 relative h-full flex flex-col border-l border-white/5 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
-            {/* Desktop Only Sidebar Header */}
-            <div className="hidden md:flex p-4 border-b border-white/10 justify-between items-center bg-slate-900/40 backdrop-blur-md shrink-0">
-              <div className="flex items-center space-x-3">
-                <button 
-                  onClick={handleGoHome}
-                  className="px-3 py-1 rounded-lg border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_14px_rgba(6,182,212,0.35)] hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] active:scale-95 transition-all cursor-pointer flex items-center group"
-                  title="Go to Home"
-                  aria-label="Go to Home"
-                >
-                  <h1 className="text-xl font-black vecto-brand-title group-hover:brightness-110">VECTO</h1>
-                </button>
-                <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                {selectedJobId && weather && (
-                  <span className="text-yellow-400 text-xs font-medium mr-2" title={weather.desc}>
-                    🌡️ {weather.temp}°F {weather.desc}
-                  </span>
-                )}
-                <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
-                  <Settings size={20} />
-                </button>
-              </div>
+        ) : (
+          /* Carousel Slider (Mobile: 2-panel slider; Desktop: side-by-side flex) */
+          <div 
+            className={`flex h-full w-[200vw] md:w-full transition-transform duration-300 ease-out pt-12 md:pt-0 ${
+              mobileView === 'sidebar' ? '-translate-x-[100vw] md:translate-x-0' : 'translate-x-0'
+            }`}
+          >
+            {/* Panel 1 (Left Side on Mobile / Main Map on Desktop): Map Area */}
+            <div className="w-[100vw] md:w-auto md:flex-1 relative z-0 h-full shrink-0 md:shrink">
+              <MapArea />
+              {selectedJobId && (
+                <div className="hidden md:block">
+                  <JobDetails />
+                </div>
+              )}
             </div>
+            
+            {/* Panel 2 (Right Side on Mobile / Right Sidebar on Desktop): Job Info & Sidebar */}
+            <div className="w-[100vw] md:w-96 glass-panel z-10 shrink-0 relative h-full flex flex-col border-l border-white/5 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
+              {/* Desktop Only Sidebar Header */}
+              <div className="hidden md:flex p-4 border-b border-white/10 justify-between items-center bg-slate-900/40 backdrop-blur-md shrink-0">
+                <div className="flex items-center space-x-3">
+                  <button 
+                    onClick={handleGoHome}
+                    className="px-3 py-1 rounded-lg border border-cyan-400/60 bg-slate-900/90 shadow-[0_0_14px_rgba(6,182,212,0.35)] hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] active:scale-95 transition-all cursor-pointer flex items-center group"
+                    title="Go to Home"
+                    aria-label="Go to Home"
+                  >
+                    <h1 className="text-xl font-black vecto-brand-title group-hover:brightness-110">VECTO</h1>
+                  </button>
+                  <p className="text-xs text-gray-400 font-medium">Welcome, {currentUser.name}</p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button 
+                    onClick={() => setMainView('operations')}
+                    className="px-2.5 py-1 rounded-lg border text-xs font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm bg-slate-800/80 hover:bg-slate-700 text-purple-300 border-purple-500/30 hover:border-purple-500/60"
+                    title="Open Operations Board"
+                  >
+                    <LayoutDashboard size={13} className="text-purple-400" />
+                    <span>Ops Board</span>
+                  </button>
+                  {selectedJobId && weather && (
+                    <span className="text-yellow-400 text-xs font-medium mr-2" title={weather.desc}>
+                      🌡️ {weather.temp}°F {weather.desc}
+                    </span>
+                  )}
+                  <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
+                    <Settings size={20} />
+                  </button>
+                </div>
+              </div>
 
-            {/* Content Container */}
-            <div className="flex-1 overflow-y-auto relative flex flex-col min-h-0">
-              {/* Mobile View: JobDetails if selected, else Sidebar */}
-              <div className="md:hidden h-full flex flex-col flex-1">
-                {selectedJobId ? <JobDetails /> : <Sidebar />}
-              </div>
-              {/* Desktop View: Always Sidebar */}
-              <div className="hidden md:block h-full p-4 overflow-y-auto">
-                <Sidebar />
+              {/* Content Container */}
+              <div className="flex-1 overflow-y-auto relative flex flex-col min-h-0">
+                {/* Mobile View: JobDetails if selected, else Sidebar */}
+                <div className="md:hidden h-full flex flex-col flex-1">
+                  {selectedJobId ? <JobDetails /> : <Sidebar />}
+                </div>
+                {/* Desktop View: Always Sidebar */}
+                <div className="hidden md:block h-full p-4 overflow-y-auto">
+                  <Sidebar />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
         
         {/* Modals */}
         <SettingsModal />
@@ -293,6 +329,8 @@ function App() {
         <CreateJobModal />
         <AdminSettingsModal />
         <CompanySettingsModal />
+        <DriverRosterModal />
+        <ExpenseLedgerModal />
         <ProfileModal />
         <UserGuideModal />
         <TechnicalsModal />

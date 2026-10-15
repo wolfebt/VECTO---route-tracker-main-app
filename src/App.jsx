@@ -1,8 +1,10 @@
 import React from 'react';
 import { useAppStore } from './store/useAppStore';
-import { useAuth, useCompany } from './hooks/useFirebase';
+import { useAuth, useCompany, useJobs } from './hooks/useFirebase';
 import { useUrlOnboarding } from './hooks/useUrlOnboarding';
 import { useLocationSharing } from './hooks/useLocationSharing';
+import { useNativeDevice } from './hooks/useNativeDevice';
+import { useCarAppSync } from './hooks/useCarAppSync';
 import Auth from './components/Auth';
 import CompanySelector from './components/CompanySelector';
 import Sidebar from './components/layout/Sidebar';
@@ -144,6 +146,13 @@ function App() {
   // Automatically start location sharing when app is up
   useLocationSharing();
 
+  // Initialize native status bar and hardware back button
+  useNativeDevice();
+
+  // Synchronize jobs with Android Auto dashboard
+  const jobs = useJobs();
+  useCarAppSync(jobs);
+
   const splashScreen = showSplash ? (
     <div className={`fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b0f19] transition-opacity duration-500 ease-in-out ${fadeSplash ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
       <h1 className="text-6xl md:text-8xl font-black vecto-brand-title tracking-widest drop-shadow-[0_0_25px_rgba(56,189,248,0.3)]">VECTO</h1>
@@ -181,7 +190,7 @@ function App() {
         className="h-screen bg-[#0b0f19] text-white overflow-hidden font-sans relative"
       >
         {/* Thin Mobile Top Navigation Bar */}
-        <div className="md:hidden fixed top-0 left-0 right-0 h-12 z-50 bg-slate-950/90 backdrop-blur-2xl border-b border-white/10 px-3 flex items-center justify-between shadow-xl">
+        <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-slate-950/90 backdrop-blur-2xl border-b border-white/10 px-3 pt-[env(safe-area-inset-top,0px)] h-[calc(3rem+env(safe-area-inset-top,0px))] flex items-center justify-between shadow-xl">
           {/* Left: Branding */}
           <div className="flex items-center space-x-2">
             <button 
@@ -253,13 +262,13 @@ function App() {
 
         {/* Main Content Area */}
         {mainView === 'operations' ? (
-          <div className="h-full pt-12 md:pt-0">
+          <div className="h-full pt-[calc(3rem+env(safe-area-inset-top,0px))] md:pt-0">
             <OperationsBoard />
           </div>
         ) : (
           /* Carousel Slider (Mobile: 2-panel slider; Desktop: side-by-side flex) */
           <div 
-            className={`flex h-full w-[200vw] md:w-full transition-transform duration-300 ease-out pt-12 md:pt-0 ${
+            className={`flex h-full w-[200vw] md:w-full transition-transform duration-300 ease-out pt-[calc(3rem+env(safe-area-inset-top,0px))] md:pt-0 ${
               mobileView === 'sidebar' ? '-translate-x-[100vw] md:translate-x-0' : 'translate-x-0'
             }`}
           >

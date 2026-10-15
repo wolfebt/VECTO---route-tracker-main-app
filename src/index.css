@@ -128,3 +128,23 @@ body {
   filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
 }
 
+/* Safe Area Utilities for Mobile Insets */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+.safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem);
+}
+
+.safe-nav-height {
+  height: calc(3.25rem + env(safe-area-inset-top, 0px));
+}
+

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithCredential } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, collection, query, serverTimestamp, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { useAppStore } from '../store/useAppStore';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 export function useAuth() {
   const setCurrentUser = useAppStore(state => state.setCurrentUser);
@@ -99,14 +101,36 @@ export function useAuth() {
     return unsub;
   }, [setCurrentUser, setMapsApiKey, setFirebaseApiKey, setGeminiApiKey]);
 
-  const login = () => {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    return signInWithPopup(auth, provider);
+  const login = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        if (result.credential?.idToken) {
+          const credential = GoogleAuthProvider.credential(result.credential.idToken);
+          return await signInWithCredential(auth, credential);
+        }
+        throw new Error("No Google credentials returned from native account picker.");
+      } catch (err) {
+        console.error("Native Google sign-in failed:", err);
+        throw err;
+      }
+    } else {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      return signInWithPopup(auth, provider);
+    }
   };
+
   const logout = async () => {
     useAppStore.getState().triggerSplash();
     useAppStore.getState().clearCompany();
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await FirebaseAuthentication.signOut();
+      } catch (e) {
+        console.warn("Native FirebaseAuthentication signOut error:", e);
+      }
+    }
     await signOut(auth);
   };
   

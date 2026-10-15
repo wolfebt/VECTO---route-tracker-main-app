@@ -79,6 +79,15 @@ export function useLocationSharing() {
     // Dispatchers do not show pins or share location
     if (isSharingLocation && currentUser && companyId && !isDispatchView) {
       if (Capacitor.isNativePlatform()) {
+        // Advisory tip for OEM battery optimization
+        if (!localStorage.getItem('vecto_battery_tip_shown')) {
+          useToastStore.getState().addToast(
+            "Tip: Set Vecto battery to 'Unrestricted' in Android settings for reliable tracking when the screen is locked.",
+            "info"
+          );
+          localStorage.setItem('vecto_battery_tip_shown', 'true');
+        }
+
         // --- NATIVE BACKGROUND TRACKING ---
         BackgroundGeolocation.addWatcher(
           {

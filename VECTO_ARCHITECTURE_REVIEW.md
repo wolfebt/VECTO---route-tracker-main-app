@@ -236,10 +236,10 @@ All planned implementation phases (**Baseline Phases 1–5** and **Phases A–E*
 
 ## 6. Deployment & Post-Deploy Verification Checklist
 
-1. Configure secrets and deploy Firebase backend + Hosting:
+1. Configure secrets and deploy Firebase backend + Hosting (`firebase.json` Hosting is configured for `https://route-tracker-e62b1.web.app`):
    ```powershell
-   firebase functions:secrets:set GEMINI_API_KEY
-   firebase deploy --only firestore:rules,firestore:indexes,storage,functions,hosting
+   npx -y firebase-tools@latest functions:secrets:set GEMINI_API_KEY
+   npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes,storage,functions,hosting
    ```
 2. Sync native Capacitor projects after production build:
    ```powershell

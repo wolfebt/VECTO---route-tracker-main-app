@@ -75,6 +75,16 @@ npm run dev
 ```
 Open your browser to the local URL provided (usually `http://localhost:5173`).
 
+### 4. Deployment (Firebase Hosting)
+Build and deploy the live web app to Firebase Hosting (`https://route-tracker-e62b1.web.app`):
+```bash
+npm run deploy
+```
+To deploy Hosting together with Firestore rules, Firestore indexes, and Storage rules:
+```bash
+npm run deploy:firebase
+```
+
 ---
 
 ## 📱 Mobile Development (Capacitor)

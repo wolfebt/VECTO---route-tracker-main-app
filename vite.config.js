@@ -36,12 +36,12 @@ function buildTestAliases() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: './',
+  base: '/',
   plugins: [tailwindcss(), react()],
   test: {
     environment: 'jsdom',
     globals: false,
-    env: { VITE_GOOGLE_MAPS_API_KEY: '' },
+    env: { VITE_GOOGLE_MAPS_API_KEY: '', VITE_PUBLIC_APP_URL: '' },
     alias: buildTestAliases(),
     setupFiles: ['./TEST_SUITE/helpers/setupDomMocks.js'],
     include: ['TEST_SUITE/**/*.test.{js,jsx}'],

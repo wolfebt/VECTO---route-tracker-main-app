@@ -4,6 +4,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { toMillisSafe } from '../../utils/formatters';
 
 export default function DriversList() {
   const drivers = useActiveDrivers();
@@ -23,7 +24,7 @@ export default function DriversList() {
   };
 
   const fiveMinAgo = Date.now() - (5 * 60 * 1000);
-  const active = drivers.filter(d => d.timestamp && d.timestamp.toMillis() > fiveMinAgo);
+  const active = drivers.filter(d => toMillisSafe(d.timestamp) > fiveMinAgo);
 
   if (active.length === 0) {
     return <p className="text-gray-400 text-sm italic p-2">No active drivers.</p>;

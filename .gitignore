@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+functions/node_modules
 dist
 dist-ssr
 *.local
@@ -24,3 +25,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Native Firebase secrets
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
+

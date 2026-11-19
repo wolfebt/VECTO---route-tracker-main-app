@@ -56,10 +56,19 @@
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>We need your location to track your route in the background.</string>
 	
+	<!-- Camera & Photo Library Usage Descriptions -->
+	<key>NSCameraUsageDescription</key>
+	<string>Vecto uses your camera to capture delivery proof photos and job chat attachments.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Vecto accesses your photo library so you can attach delivery proof photos and receipts to jobs.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Vecto saves delivery proof photos and route exports to your photo library when requested.</string>
+
 	<!-- Background Modes -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
+		<string>remote-notification</string>
 	</array>
 </dict>
 </plist>

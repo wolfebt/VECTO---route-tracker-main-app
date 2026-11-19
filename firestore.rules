@@ -1,21 +1,297 @@
 rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: /users/{userId}
+// Document ID: Firebase Auth UID (must match request.auth.uid)
+// Fields:
+//   - email: string (optional, <= 254 chars)
+//   - name: string (optional, <= 120 chars)
+//   - phone: string (optional, <= 40 chars)
+//   - number: string (optional, <= 40 chars, legacy phone alias)
+//   - color: string (optional, <= 32 chars)
+//   - companies: list (optional, <= 100 company IDs)
+//   - preferences: map (optional, <= 30 keys; mapsApiKey/firebaseApiKey/geminiApiKey <= 512 chars)
+//   - lastRead: map (optional, <= 500 jobId -> timestamp entries)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// Collection: /company_directory/{companyId}
+// Document ID: Matches /companies/{companyId} (non-PII fleet listing)
+// Fields:
+//   - name: string (required, 1..120 chars)
+//   - requirePassword: bool (optional)
+//   - createdBy: string (required, 1..128 chars, UID of creator, immutable)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// Collection: /companies/{companyId}
+// Document ID: Auto-generated company ID
+// Fields:
+//   - name: string (required, 1..120 chars)
+//   - createdBy: string (required, 1..128 chars, UID of creator, immutable)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//   - requirePassword: bool (optional)
+//   - password: string | null (optional, <= 128 chars, legacy plaintext field; forbidden on create)
+//   - passwordHash: string | null (optional, <= 128 chars, legacy SHA-256 hex digest; forbidden on create)
+//   - address: string (optional, <= 300 chars, legacy)
+//   - contactName: string (optional, <= 120 chars, legacy)
+//   - phone: string (optional, <= 40 chars, legacy)
+//   - email: string (optional, <= 254 chars, legacy)
+//   - showNameplates: bool (optional)
+//   - removedMemberIds: list (optional, <= 500 UIDs, legacy)
+//
+// Subcollection: /companies/{companyId}/private/{docId}
+// Document ID: 'security' (dispatcher-only read/write)
+// Fields:
+//   - passwordHash: string | null (optional, <= 128 chars, salted SHA-256 hex digest)
+//   - removedMemberIds: list (optional, <= 500 UIDs)
+//   - updatedAt: timestamp (optional)
+// Document ID: 'profile' (company member read, dispatcher-only write; isolated contact PII)
+// Fields:
+//   - address: string (optional, <= 300 chars)
+//   - contactName: string (optional, <= 120 chars)
+//   - phone: string (optional, <= 40 chars)
+//   - email: string (optional, <= 254 chars)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: /companies/{companyId}/join_requests/{userId}
+// Document ID: Firebase Auth UID of user requesting to join
+// Fields:
+//   - proofHash: string | null (optional, <= 128 chars, salted SHA-256 hex digest)
+//   - legacyProofHash: string | null (optional, <= 128 chars, legacy unsalted SHA-256 hex digest)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: /companies/{companyId}/members/{memberId}
+// Document ID: Firebase Auth UID of member
+// Fields:
+//   - email: string (optional, <= 254 chars)
+//   - name: string (optional, <= 120 chars)
+//   - phone: string (optional, <= 40 chars)
+//   - number: string (optional, <= 40 chars)
+//   - color: string (optional, <= 32 chars)
+//   - permissions: map (optional, { canCreateJob: bool, canDeleteJob: bool, canManageDrivers: bool })
+//   - isPriorityDriver: bool (optional)
+//   - onDutyStatus: string (optional, 'on_duty' | 'break' | 'off_duty')
+//   - rosterOrder: number | null (optional, -1000..100000)
+//   - role: string (optional, <= 40 chars)
+//   - joinedAt: timestamp (optional)
+//   - updatedAt: timestamp (optional)
+//   - lastDispatchedAt: timestamp (optional)
+//
+// Subcollection: /companies/{companyId}/jobs/{jobId}
+// Document ID: Auto-generated job ID
+// Fields:
+//   - jobName: string (required on create, <= 200 chars)
+//   - jobDate: string (optional, <= 40 chars)
+//   - origin: string (required on create, <= 500 chars)
+//   - destinations: list (optional, <= 50 items)
+//   - destination: string (optional, <= 500 chars, legacy)
+//   - optimizeRoute: bool (optional)
+//   - contactName: string (optional, <= 120 chars)
+//   - contactNumber: string (optional, <= 40 chars)
+//   - driversNeeded: number (optional, 0..100)
+//   - instructions: list (optional, <= 100 items)
+//   - note: string (optional, <= 5000 chars)
+//   - assignedDrivers: list (optional, <= 100 items)
+//   - assignedDriverIds: list (optional, <= 100 UIDs)
+//   - completedDrivers: list (optional, <= 100 items)
+//   - stops: list (optional, <= 100 items)
+//   - waypoint_order / waypointOrder: list (optional, <= 100 items)
+//   - status: string (required, 1..40 chars)
+//   - previousStatus: string (optional, <= 40 chars)
+//   - archived: bool (optional)
+//   - routeColor: string (optional, <= 32 chars)
+//   - createdBy: string (optional, <= 128 chars, immutable once set)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - startedAt: timestamp (optional)
+//   - completedAt: timestamp (optional)
+//   - updatedAt: timestamp (optional)
+//   - lastMessageTimestamp: timestamp (optional)
+//   - trackingToken: string | null (optional, <= 128 chars)
+//   - pod: map | null (optional, <= 15 keys)
+//   - vehicleId: string | null (optional, <= 128 chars)
+//   - vehicleLabel: string | null (optional, <= 120 chars)
+//
+// Subcollection: /companies/{companyId}/jobs/{jobId}/chat/{chatId}
+// Fields:
+//   - text: string (optional, <= 4000 chars; text or attachmentUrl required)
+//   - attachmentUrl: string | null (optional, <= 2048 chars, http/https URL)
+//   - senderId: string (required, 1..128 chars, immutable)
+//   - senderName: string | null (optional, <= 120 chars)
+//   - timestamp: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: /companies/{companyId}/jobs/{jobId}/notes/{noteId}
+// Fields:
+//   - text: string (required, 1..4000 chars)
+//   - driverId: string (required, 1..128 chars, immutable)
+//   - driverName: string | null (optional, <= 120 chars)
+//   - timestamp: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: /companies/{companyId}/jobs/{jobId}/expenses/{expenseId}
+// Fields:
+//   - type: string (required, 1..40 chars)
+//   - amount: number (required, 0..1000000)
+//   - description: string (optional, <= 2000 chars)
+//   - receiptUrl: string | null (optional, <= 2048 chars, http/https URL)
+//   - driverId: string (required, 1..128 chars, immutable)
+//   - driverName: string | null (optional, <= 120 chars)
+//   - status: string (optional, 'submitted' | 'approved' | 'rejected' | 'reimbursed')
+//   - companyId: string (optional, 1..128 chars, must match path companyId)
+//   - jobId: string (optional, 1..128 chars, must match path jobId)
+//   - jobName: string (optional, <= 200 chars)
+//   - timestamp: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//   - reviewedAt: timestamp (optional)
+//   - reviewedBy: string | null (optional, <= 128 chars)
+//   - reviewNote: string | null (optional, <= 500 chars)
+//
+// Subcollection: /companies/{companyId}/jobs/{jobId}/breadcrumbs/{chunkId}
+// Document ID: Auto-generated or deterministic chunk ID
+// Fields:
+//   - companyId: string (required, must match path companyId, immutable)
+//   - jobId: string (required, must match path jobId, immutable)
+//   - driverId: string (required, 1..128 chars, must match auth uid on create, immutable)
+//   - driverName: string | null (optional, <= 120 chars)
+//   - points: list (required, 1..200 items)
+//   - pointCount: number (optional, 1..200)
+//   - startTime: number | timestamp (optional)
+//   - endTime: number | timestamp (optional)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - source: string (optional, <= 32 chars)
+//
+// Subcollection: /companies/{companyId}/active_drivers/{driverId}
+// Document ID: Firebase Auth UID of driver
+// Fields:
+//   - location: latlng | null (optional)
+//   - geohash: string (optional, <= 20 chars)
+//   - timestamp: timestamp (optional)
+//   - updatedAt: timestamp (optional)
+//   - status: string (optional, <= 40 chars)
+//   - name: string (optional, <= 120 chars)
+//   - email: string (optional, <= 254 chars)
+//   - phone: string (optional, <= 40 chars)
+//   - number: string (optional, <= 40 chars)
+//   - color: string (optional, <= 32 chars)
+//   - activeJobId: string | null (optional, <= 128 chars)
+//   - heading: number (optional)
+//   - speed: number (optional)
+//   - accuracy: number (optional)
+//
+// Subcollection: /companies/{companyId}/vehicles/{vehicleId}
+// Document ID: Auto-generated vehicle ID
+// Fields:
+//   - unitNumber: string (required, 1..60 chars)
+//   - makeModel: string (optional, <= 120 chars)
+//   - vin: string (optional, <= 32 chars)
+//   - licensePlate: string (optional, <= 32 chars)
+//   - vehicleType: string (optional, 'van' | 'box_truck' | 'semi' | 'pickup' | 'car')
+//   - fuelType: string (optional, 'diesel' | 'gasoline' | 'electric' | 'hybrid')
+//   - capacityLbs: number | null (optional, 0..200000)
+//   - odometerMiles: number | null (optional, 0..5000000)
+//   - serviceDueMiles: number | null (optional, 0..5000000)
+//   - serviceDueDate: string | null (optional, <= 40 chars)
+//   - status: string (required, 'active' | 'maintenance' | 'out_of_service')
+//   - assignedDriverId: string | null (optional, <= 128 chars)
+//   - assignedDriverName: string | null (optional, <= 120 chars)
+//   - lastInspectionStatus: string | null (optional, 'safe' | 'defects_noted' | 'unsafe')
+//   - lastInspectionAt: timestamp (optional)
+//   - notes: string (optional, <= 1000 chars)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: /companies/{companyId}/inspections/{inspectionId}
+// Document ID: Auto-generated inspection ID
+// Fields:
+//   - companyId: string (required, must match path companyId, immutable)
+//   - vehicleId: string (required, 1..128 chars)
+//   - vehicleLabel: string (optional, <= 120 chars)
+//   - jobId: string | null (optional, <= 128 chars)
+//   - driverId: string (required, 1..128 chars, must match auth uid on create, immutable)
+//   - driverName: string | null (optional, <= 120 chars)
+//   - inspectionType: string (required, 'pre_trip' | 'post_trip')
+//   - odometerMiles: number (required, 0..5000000)
+//   - checklist: map (required, 1..20 keys)
+//   - defectsSummary: string (optional, <= 2000 chars)
+//   - defectPhotoUrl: string | null (optional, <= 2048 chars, http/https URL)
+//   - overallStatus: string (required, 'safe' | 'defects_noted' | 'unsafe')
+//   - driverSignedName: string (required, 1..120 chars)
+//   - mechanicResolved: bool (optional)
+//   - resolvedBy: string | null (optional, <= 128 chars)
+//   - resolvedNote: string | null (optional, <= 500 chars)
+//   - resolvedAt: timestamp (optional)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// Collection: /public_tracking/{token}
+// Document ID: High-entropy unguessable tracking token (20..128 chars)
+// Fields:
+//   - companyId: string (required, 1..128 chars, immutable)
+//   - companyName: string | null (optional, <= 200 chars)
+//   - jobId: string (required, 1..128 chars, immutable)
+//   - jobName: string | null (optional, <= 200 chars)
+//   - status: string (required, 1..40 chars)
+//   - driverId: string | null (optional, <= 128 chars)
+//   - driverFirstName: string | null (optional, <= 80 chars)
+//   - driverLocation: map | null (optional, { lat: -90..90, lng: -180..180 })
+//   - heading: number | null (optional)
+//   - speed: number | null (optional)
+//   - originLabel: string | null (optional, <= 500 chars)
+//   - destinationAddress: string | null (optional, <= 500 chars)
+//   - destinationCoords: map | null (optional, { lat: -90..90, lng: -180..180 })
+//   - stopsSummary: list (optional, <= 50 items)
+//   - etaText: string | null (optional, <= 80 chars)
+//   - distanceRemainingText: string | null (optional, <= 80 chars)
+//   - etaUpdatedAt: number | null (optional)
+//   - podCompleted: bool (optional)
+//   - revoked: bool (optional)
+//   - expiresAt: timestamp | null (optional)
+//   - createdAt: timestamp (optional, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// ===============================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
+
+    // ===============================================================
+    // Core Auth & Membership Helper Functions
+    // ===============================================================
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function companyExists(companyId) {
+      return exists(/databases/$(database)/documents/companies/$(companyId));
+    }
+
+    function getCompanyData(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)).data;
+    }
+
+    function isCompanyCreator(companyId) {
+      return isAuthenticated()
+        && companyExists(companyId)
+        && getCompanyData(companyId).get('createdBy', '') == request.auth.uid;
+    }
+
+    function hasMemberDoc(companyId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid));
+    }
+
     function isCompanyMember(companyId) {
-      return isAuthenticated() && (
-        exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) ||
-        get(/databases/$(database)/documents/companies/$(companyId)).data.createdBy == request.auth.uid
-      );
+      return hasMemberDoc(companyId) || isCompanyCreator(companyId);
     }
 
     function getMemberData(companyId) {
@@ -23,71 +299,831 @@ service cloud.firestore {
     }
 
     function isDispatcher(companyId) {
-      return isCompanyMember(companyId) && (
-        get(/databases/$(database)/documents/companies/$(companyId)).data.createdBy == request.auth.uid ||
-        request.auth.token.email.toLowerCase() == 'btw.284@gmail.com' ||
+      return isCompanyCreator(companyId) || (
+        hasMemberDoc(companyId) &&
+        getMemberData(companyId).get('permissions', {}) is map && (
+          getMemberData(companyId).get('permissions', {}).get('canCreateJob', false) == true ||
+          getMemberData(companyId).get('permissions', {}).get('canManageDrivers', false) == true
+        )
+      );
+    }
+
+    function canDeleteJobs(companyId) {
+      return isCompanyCreator(companyId) || (
+        hasMemberDoc(companyId) &&
+        getMemberData(companyId).get('permissions', {}) is map &&
+        getMemberData(companyId).get('permissions', {}).get('canDeleteJob', false) == true
+      );
+    }
+
+    function isRemovedMember(companyId, memberId) {
+      return (
+        companyExists(companyId)
+        && getCompanyData(companyId).get('removedMemberIds', []) is list
+        && memberId in getCompanyData(companyId).get('removedMemberIds', [])
+      ) || (
+        exists(/databases/$(database)/documents/companies/$(companyId)/private/security)
+        && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('removedMemberIds', []) is list
+        && memberId in get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('removedMemberIds', [])
+      );
+    }
+
+    function hasValidJoinProof(companyId, memberId) {
+      return exists(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId)) && (
         (
-          exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) && (
-            getMemberData(companyId).permissions.canCreateJob == true ||
-            getMemberData(companyId).permissions.canManageDrivers == true
+          exists(/databases/$(database)/documents/companies/$(companyId)/private/security)
+          && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') is string
+          && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') != ''
+          && get(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId)).data.get('proofHash', '') == get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '')
+        ) || (
+          (
+            !exists(/databases/$(database)/documents/companies/$(companyId)/private/security)
+            || !(
+              get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') is string
+              && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') != ''
+            )
+          )
+          && getCompanyData(companyId).get('passwordHash', '') is string
+          && getCompanyData(companyId).get('passwordHash', '') != ''
+          && get(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId)).data.get('legacyProofHash', '') == getCompanyData(companyId).get('passwordHash', '')
+        )
+      );
+    }
+
+    function isAssignedDriverOnJob(jobData) {
+      return isAuthenticated() && jobData is map && (
+        ('assignedDriverIds' in jobData && jobData.assignedDriverIds is list && request.auth.uid in jobData.assignedDriverIds)
+        || (
+          jobData.get('assignedDrivers', []) is list && (
+            (jobData.get('assignedDrivers', []).size() > 0 && jobData.get('assignedDrivers', [])[0] is map && jobData.get('assignedDrivers', [])[0].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 1 && jobData.get('assignedDrivers', [])[1] is map && jobData.get('assignedDrivers', [])[1].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 2 && jobData.get('assignedDrivers', [])[2] is map && jobData.get('assignedDrivers', [])[2].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 3 && jobData.get('assignedDrivers', [])[3] is map && jobData.get('assignedDrivers', [])[3].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 4 && jobData.get('assignedDrivers', [])[4] is map && jobData.get('assignedDrivers', [])[4].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 5 && jobData.get('assignedDrivers', [])[5] is map && jobData.get('assignedDrivers', [])[5].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 6 && jobData.get('assignedDrivers', [])[6] is map && jobData.get('assignedDrivers', [])[6].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 7 && jobData.get('assignedDrivers', [])[7] is map && jobData.get('assignedDrivers', [])[7].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 8 && jobData.get('assignedDrivers', [])[8] is map && jobData.get('assignedDrivers', [])[8].get('id', '') == request.auth.uid) ||
+            (jobData.get('assignedDrivers', []).size() > 9 && jobData.get('assignedDrivers', [])[9] is map && jobData.get('assignedDrivers', [])[9].get('id', '') == request.auth.uid)
           )
         )
       );
     }
 
-    // Users Collection
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
+    // ===============================================================
+    // Generic Validation Helper Functions
+    // ===============================================================
+
+    function isOptionalString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
     }
 
+    function isOptionalNullableString(data, field, maxLen) {
+      return !(field in data) || data[field] == null || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isOptionalBool(data, field) {
+      return !(field in data) || data[field] is bool;
+    }
+
+    function isOptionalTimestamp(data, field) {
+      return !(field in data) || data[field] == null || data[field] is timestamp;
+    }
+
+    function isOptionalList(data, field, maxSize) {
+      return !(field in data) || (data[field] is list && data[field].size() <= maxSize);
+    }
+
+    function isValidUrl(url) {
+      return url is string && url.matches("^https?://.*");
+    }
+
+    function isOptionalNullableUrl(data, field, maxLen) {
+      return !(field in data)
+        || data[field] == null
+        || (data[field] is string && data[field].size() <= maxLen && isValidUrl(data[field]));
+    }
+
+    function isOptionalNullableNumber(data, field) {
+      return !(field in data) || data[field] == null || data[field] is number;
+    }
+
+    function isValidLatLngMap(val) {
+      return val is map
+        && val.keys().hasAll(['lat', 'lng'])
+        && val.keys().hasOnly(['lat', 'lng'])
+        && val.lat is number && val.lat >= -90 && val.lat <= 90
+        && val.lng is number && val.lng >= -180 && val.lng <= 180;
+    }
+
+    function isValidDocIdSegment(id, maxLen) {
+      return id is string
+        && id.size() >= 1
+        && id.size() <= maxLen
+        && id.matches('^[^/]+$')
+        && id != '.'
+        && id != '..';
+    }
+
+    // ===============================================================
+    // Domain Validators (Called in Both Create & Update Rules)
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasOnly([
+          'email', 'name', 'phone', 'number', 'color', 'companies',
+          'preferences', 'lastRead', 'createdAt', 'updatedAt',
+          'fcmToken', 'fcmTokens', 'uid', 'photoURL', 'displayName'
+        ])
+        && isOptionalNullableString(data, 'email', 254)
+        && isOptionalNullableString(data, 'name', 120)
+        && isOptionalString(data, 'phone', 40)
+        && isOptionalString(data, 'number', 40)
+        && isOptionalString(data, 'color', 32)
+        && isOptionalList(data, 'companies', 100)
+        && (!('preferences' in data) || (
+          data.preferences is map
+          && data.preferences.keys().size() <= 30
+          && isOptionalString(data.preferences, 'mapsApiKey', 512)
+          && isOptionalString(data.preferences, 'firebaseApiKey', 512)
+          && isOptionalString(data.preferences, 'geminiApiKey', 512)
+        ))
+        && (!('lastRead' in data) || (data.lastRead is map && data.lastRead.keys().size() <= 500))
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalTimestamp(data, 'updatedAt')
+        && isOptionalNullableString(data, 'fcmToken', 512)
+        && isOptionalList(data, 'fcmTokens', 20)
+        && isOptionalString(data, 'uid', 128)
+        && isOptionalNullableUrl(data, 'photoURL', 2048)
+        && isOptionalNullableString(data, 'displayName', 120);
+    }
+
+    function isValidCompany(data) {
+      return data.keys().hasOnly([
+          'name', 'createdBy', 'createdAt', 'updatedAt', 'requirePassword',
+          'password', 'passwordHash', 'address', 'contactName', 'phone',
+          'email', 'showNameplates', 'removedMemberIds'
+        ])
+        && 'name' in data && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && 'createdBy' in data && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalTimestamp(data, 'updatedAt')
+        && isOptionalBool(data, 'requirePassword')
+        && isOptionalNullableString(data, 'password', 128)
+        && isOptionalNullableString(data, 'passwordHash', 128)
+        && isOptionalString(data, 'address', 300)
+        && isOptionalString(data, 'contactName', 120)
+        && isOptionalString(data, 'phone', 40)
+        && isOptionalString(data, 'email', 254)
+        && isOptionalBool(data, 'showNameplates')
+        && isOptionalList(data, 'removedMemberIds', 500);
+    }
+
+    function isValidCompanyDirectory(data) {
+      return data.keys().hasOnly([
+          'name', 'requirePassword', 'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && 'name' in data && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && 'createdBy' in data && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && isOptionalBool(data, 'requirePassword')
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidCompanySecurity(data) {
+      return data.keys().hasOnly(['passwordHash', 'removedMemberIds', 'updatedAt'])
+        && isOptionalNullableString(data, 'passwordHash', 128)
+        && isOptionalList(data, 'removedMemberIds', 500)
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidCompanyProfile(data) {
+      return data.keys().hasOnly(['address', 'contactName', 'phone', 'email', 'updatedAt'])
+        && isOptionalString(data, 'address', 300)
+        && isOptionalString(data, 'contactName', 120)
+        && isOptionalString(data, 'phone', 40)
+        && isOptionalString(data, 'email', 254)
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidJoinRequest(data) {
+      return data.keys().hasOnly(['proofHash', 'legacyProofHash', 'updatedAt'])
+        && isOptionalNullableString(data, 'proofHash', 128)
+        && isOptionalNullableString(data, 'legacyProofHash', 128)
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidMember(data) {
+      return data.keys().hasOnly([
+          'email', 'name', 'phone', 'number', 'color', 'permissions',
+          'isPriorityDriver', 'onDutyStatus', 'rosterOrder', 'role',
+          'joinedAt', 'updatedAt', 'lastDispatchedAt'
+        ])
+        && isOptionalNullableString(data, 'email', 254)
+        && isOptionalNullableString(data, 'name', 120)
+        && isOptionalString(data, 'phone', 40)
+        && isOptionalString(data, 'number', 40)
+        && isOptionalString(data, 'color', 32)
+        && (!('permissions' in data) || (
+          data.permissions is map
+          && data.permissions.keys().size() <= 10
+          && isOptionalBool(data.permissions, 'canCreateJob')
+          && isOptionalBool(data.permissions, 'canDeleteJob')
+          && isOptionalBool(data.permissions, 'canManageDrivers')
+        ))
+        && isOptionalBool(data, 'isPriorityDriver')
+        && (!('onDutyStatus' in data) || data.onDutyStatus in ['on_duty', 'break', 'off_duty'])
+        && (!('rosterOrder' in data) || data.rosterOrder == null || (data.rosterOrder is number && data.rosterOrder >= -1000 && data.rosterOrder <= 100000))
+        && isOptionalString(data, 'role', 40)
+        && isOptionalTimestamp(data, 'joinedAt')
+        && isOptionalTimestamp(data, 'updatedAt')
+        && isOptionalTimestamp(data, 'lastDispatchedAt');
+    }
+
+    function isValidJob(data) {
+      return data.keys().hasOnly([
+          'jobName', 'jobDate', 'origin', 'destinations', 'destination',
+          'optimizeRoute', 'contactName', 'contactNumber', 'driversNeeded',
+          'instructions', 'note', 'assignedDrivers', 'assignedDriverIds', 'completedDrivers',
+          'stops', 'waypoint_order', 'waypointOrder', 'status',
+          'previousStatus', 'archived', 'routeColor', 'createdBy',
+          'createdAt', 'startedAt', 'completedAt', 'updatedAt',
+          'lastMessageTimestamp', 'title', 'name', 'address',
+          'customer', 'client', 'notes', 'phone', 'customerPhone',
+          'trackingToken', 'pod', 'vehicleId', 'vehicleLabel'
+        ])
+        && isOptionalString(data, 'jobName', 200)
+        && isOptionalString(data, 'jobDate', 40)
+        && isOptionalString(data, 'origin', 500)
+        && isOptionalList(data, 'destinations', 50)
+        && isOptionalString(data, 'destination', 500)
+        && isOptionalBool(data, 'optimizeRoute')
+        && isOptionalString(data, 'contactName', 120)
+        && isOptionalString(data, 'contactNumber', 40)
+        && (!('driversNeeded' in data) || (data.driversNeeded is number && data.driversNeeded >= 0 && data.driversNeeded <= 100))
+        && isOptionalList(data, 'instructions', 100)
+        && isOptionalString(data, 'note', 5000)
+        && isOptionalList(data, 'assignedDrivers', 100)
+        && isOptionalList(data, 'assignedDriverIds', 100)
+        && isOptionalList(data, 'completedDrivers', 100)
+        && isOptionalList(data, 'stops', 100)
+        && isOptionalList(data, 'waypoint_order', 100)
+        && isOptionalList(data, 'waypointOrder', 100)
+        && 'status' in data && data.status is string && data.status.size() >= 1 && data.status.size() <= 40
+        && isOptionalString(data, 'previousStatus', 40)
+        && isOptionalBool(data, 'archived')
+        && isOptionalString(data, 'routeColor', 32)
+        && isOptionalString(data, 'createdBy', 128)
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalTimestamp(data, 'startedAt')
+        && isOptionalTimestamp(data, 'completedAt')
+        && isOptionalTimestamp(data, 'updatedAt')
+        && isOptionalTimestamp(data, 'lastMessageTimestamp')
+        && isOptionalString(data, 'title', 200)
+        && isOptionalString(data, 'name', 200)
+        && isOptionalString(data, 'address', 500)
+        && isOptionalString(data, 'customer', 120)
+        && isOptionalString(data, 'client', 120)
+        && isOptionalString(data, 'notes', 5000)
+        && isOptionalString(data, 'phone', 40)
+        && isOptionalString(data, 'customerPhone', 40)
+        && isOptionalNullableString(data, 'trackingToken', 128)
+        && (!('pod' in data) || data.pod == null || (data.pod is map && data.pod.keys().size() <= 15))
+        && isOptionalNullableString(data, 'vehicleId', 128)
+        && isOptionalNullableString(data, 'vehicleLabel', 120);
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasOnly([
+          'text', 'attachmentUrl', 'senderId', 'senderName', 'timestamp', 'updatedAt'
+        ])
+        && isOptionalString(data, 'text', 4000)
+        && isOptionalNullableUrl(data, 'attachmentUrl', 2048)
+        && (
+          ('text' in data && data.text is string && data.text.size() > 0) ||
+          ('attachmentUrl' in data && data.attachmentUrl is string && data.attachmentUrl.size() > 0)
+        )
+        && 'senderId' in data && data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128
+        && isOptionalNullableString(data, 'senderName', 120)
+        && isOptionalTimestamp(data, 'timestamp')
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidNote(data) {
+      return data.keys().hasOnly([
+          'text', 'driverId', 'driverName', 'timestamp', 'updatedAt'
+        ])
+        && 'text' in data && data.text is string && data.text.size() >= 1 && data.text.size() <= 4000
+        && 'driverId' in data && data.driverId is string && data.driverId.size() >= 1 && data.driverId.size() <= 128
+        && isOptionalNullableString(data, 'driverName', 120)
+        && isOptionalTimestamp(data, 'timestamp')
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidExpense(data, companyId, jobId) {
+      return data.keys().hasOnly([
+          'type', 'amount', 'description', 'receiptUrl', 'driverId', 'driverName',
+          'status', 'companyId', 'jobId', 'jobName', 'timestamp', 'updatedAt',
+          'reviewedAt', 'reviewedBy', 'reviewNote', 'merchant', 'ocrData'
+        ])
+        && 'type' in data && data.type is string && data.type.size() >= 1 && data.type.size() <= 40
+        && 'amount' in data && data.amount is number && data.amount >= 0 && data.amount <= 1000000
+        && isOptionalString(data, 'description', 2000)
+        && isOptionalNullableUrl(data, 'receiptUrl', 2048)
+        && 'driverId' in data && data.driverId is string && data.driverId.size() >= 1 && data.driverId.size() <= 128
+        && isOptionalNullableString(data, 'driverName', 120)
+        && (!('status' in data) || data.status in ['submitted', 'approved', 'rejected', 'reimbursed'])
+        && (!('companyId' in data) || (data.companyId is string && data.companyId == companyId))
+        && (!('jobId' in data) || (data.jobId is string && data.jobId == jobId))
+        && isOptionalString(data, 'jobName', 200)
+        && isOptionalTimestamp(data, 'timestamp')
+        && isOptionalTimestamp(data, 'updatedAt')
+        && isOptionalTimestamp(data, 'reviewedAt')
+        && isOptionalNullableString(data, 'reviewedBy', 128)
+        && isOptionalNullableString(data, 'reviewNote', 500)
+        && isOptionalNullableString(data, 'merchant', 200)
+        && (!('ocrData' in data) || (data.ocrData is map && data.ocrData.keys().size() <= 20));
+    }
+
+    function isValidBreadcrumbChunk(data, companyId, jobId) {
+      return data.keys().hasOnly([
+          'companyId', 'jobId', 'driverId', 'driverName', 'points',
+          'pointCount', 'startTime', 'endTime', 'createdAt', 'source'
+        ])
+        && 'companyId' in data && data.companyId is string && data.companyId == companyId
+        && 'jobId' in data && data.jobId is string && data.jobId == jobId
+        && 'driverId' in data && data.driverId is string && data.driverId.size() >= 1 && data.driverId.size() <= 128
+        && isOptionalNullableString(data, 'driverName', 120)
+        && 'points' in data && data.points is list && data.points.size() >= 1 && data.points.size() <= 200
+        && (!('pointCount' in data) || (data.pointCount is number && data.pointCount >= 1 && data.pointCount <= 200))
+        && (!('startTime' in data) || data.startTime is number || data.startTime is timestamp)
+        && (!('endTime' in data) || data.endTime is number || data.endTime is timestamp)
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalString(data, 'source', 32);
+    }
+
+    function isValidActiveDriver(data) {
+      return data.keys().hasOnly([
+          'location', 'geohash', 'timestamp', 'updatedAt', 'status',
+          'name', 'email', 'phone', 'number', 'color', 'activeJobId',
+          'heading', 'speed', 'accuracy'
+        ])
+        && (!('location' in data) || data.location == null || data.location is latlng)
+        && isOptionalString(data, 'geohash', 20)
+        && isOptionalTimestamp(data, 'timestamp')
+        && isOptionalTimestamp(data, 'updatedAt')
+        && isOptionalString(data, 'status', 40)
+        && isOptionalNullableString(data, 'name', 120)
+        && isOptionalNullableString(data, 'email', 254)
+        && isOptionalString(data, 'phone', 40)
+        && isOptionalString(data, 'number', 40)
+        && isOptionalString(data, 'color', 32)
+        && isOptionalNullableString(data, 'activeJobId', 128)
+        && (!('heading' in data) || data.heading == null || data.heading is number)
+        && (!('speed' in data) || data.speed == null || data.speed is number)
+        && (!('accuracy' in data) || data.accuracy == null || data.accuracy is number);
+    }
+
+    function isValidVehicle(data) {
+      return data.keys().hasOnly([
+          'unitNumber', 'makeModel', 'vin', 'licensePlate', 'vehicleType',
+          'fuelType', 'capacityLbs', 'odometerMiles', 'serviceDueMiles',
+          'serviceDueDate', 'status', 'assignedDriverId', 'assignedDriverName',
+          'lastInspectionStatus', 'lastInspectionAt', 'notes', 'createdAt',
+          'updatedAt'
+        ])
+        && 'unitNumber' in data && data.unitNumber is string && data.unitNumber.size() >= 1 && data.unitNumber.size() <= 60
+        && isOptionalString(data, 'makeModel', 120)
+        && isOptionalString(data, 'vin', 32)
+        && isOptionalString(data, 'licensePlate', 32)
+        && (!('vehicleType' in data) || data.vehicleType in ['van', 'box_truck', 'semi', 'pickup', 'car'])
+        && (!('fuelType' in data) || data.fuelType in ['diesel', 'gasoline', 'electric', 'hybrid'])
+        && (!('capacityLbs' in data) || data.capacityLbs == null || (data.capacityLbs is number && data.capacityLbs >= 0 && data.capacityLbs <= 200000))
+        && (!('odometerMiles' in data) || data.odometerMiles == null || (data.odometerMiles is number && data.odometerMiles >= 0 && data.odometerMiles <= 5000000))
+        && (!('serviceDueMiles' in data) || data.serviceDueMiles == null || (data.serviceDueMiles is number && data.serviceDueMiles >= 0 && data.serviceDueMiles <= 5000000))
+        && isOptionalNullableString(data, 'serviceDueDate', 40)
+        && 'status' in data && data.status is string && data.status in ['active', 'maintenance', 'out_of_service']
+        && isOptionalNullableString(data, 'assignedDriverId', 128)
+        && isOptionalNullableString(data, 'assignedDriverName', 120)
+        && (!('lastInspectionStatus' in data) || data.lastInspectionStatus == null || data.lastInspectionStatus in ['safe', 'defects_noted', 'unsafe'])
+        && isOptionalTimestamp(data, 'lastInspectionAt')
+        && isOptionalString(data, 'notes', 1000)
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidInspection(data, companyId) {
+      return data.keys().hasOnly([
+          'companyId', 'vehicleId', 'vehicleLabel', 'jobId', 'driverId',
+          'driverName', 'inspectionType', 'odometerMiles', 'checklist',
+          'defectsSummary', 'defectPhotoUrl', 'overallStatus', 'driverSignedName',
+          'mechanicResolved', 'resolvedBy', 'resolvedNote', 'resolvedAt',
+          'createdAt', 'updatedAt'
+        ])
+        && 'companyId' in data && data.companyId is string && data.companyId == companyId
+        && 'vehicleId' in data && data.vehicleId is string && data.vehicleId.size() >= 1 && data.vehicleId.size() <= 128
+        && isOptionalString(data, 'vehicleLabel', 120)
+        && isOptionalNullableString(data, 'jobId', 128)
+        && 'driverId' in data && data.driverId is string && data.driverId.size() >= 1 && data.driverId.size() <= 128
+        && isOptionalNullableString(data, 'driverName', 120)
+        && 'inspectionType' in data && data.inspectionType in ['pre_trip', 'post_trip']
+        && 'odometerMiles' in data && data.odometerMiles is number && data.odometerMiles >= 0 && data.odometerMiles <= 5000000
+        && 'checklist' in data && data.checklist is map && data.checklist.keys().size() >= 1 && data.checklist.keys().size() <= 20
+        && isOptionalString(data, 'defectsSummary', 2000)
+        && isOptionalNullableUrl(data, 'defectPhotoUrl', 2048)
+        && 'overallStatus' in data && data.overallStatus in ['safe', 'defects_noted', 'unsafe']
+        && 'driverSignedName' in data && data.driverSignedName is string && data.driverSignedName.size() >= 1 && data.driverSignedName.size() <= 120
+        && isOptionalBool(data, 'mechanicResolved')
+        && isOptionalNullableString(data, 'resolvedBy', 128)
+        && isOptionalNullableString(data, 'resolvedNote', 500)
+        && isOptionalTimestamp(data, 'resolvedAt')
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function isValidPublicTracking(data) {
+      return data.keys().hasOnly([
+          'companyId', 'companyName', 'jobId', 'jobName', 'status',
+          'driverId', 'driverFirstName', 'driverLocation', 'heading', 'speed',
+          'originLabel', 'destinationAddress', 'destinationCoords',
+          'stopsSummary', 'etaText', 'distanceRemainingText', 'etaUpdatedAt',
+          'podCompleted', 'revoked', 'expiresAt', 'createdAt', 'updatedAt'
+        ])
+        && 'companyId' in data && isValidDocIdSegment(data.companyId, 128)
+        && isOptionalNullableString(data, 'companyName', 200)
+        && 'jobId' in data && isValidDocIdSegment(data.jobId, 128)
+        && isOptionalNullableString(data, 'jobName', 200)
+        && 'status' in data && data.status is string && data.status.size() >= 1 && data.status.size() <= 40
+        && isOptionalNullableString(data, 'driverId', 128)
+        && isOptionalNullableString(data, 'driverFirstName', 80)
+        && (!('driverLocation' in data) || data.driverLocation == null || isValidLatLngMap(data.driverLocation))
+        && isOptionalNullableNumber(data, 'heading')
+        && isOptionalNullableNumber(data, 'speed')
+        && isOptionalNullableString(data, 'originLabel', 500)
+        && isOptionalNullableString(data, 'destinationAddress', 500)
+        && (!('destinationCoords' in data) || data.destinationCoords == null || isValidLatLngMap(data.destinationCoords))
+        && isOptionalList(data, 'stopsSummary', 50)
+        && isOptionalNullableString(data, 'etaText', 80)
+        && isOptionalNullableString(data, 'distanceRemainingText', 80)
+        && isOptionalNullableNumber(data, 'etaUpdatedAt')
+        && isOptionalBool(data, 'podCompleted')
+        && isOptionalBool(data, 'revoked')
+        && isOptionalTimestamp(data, 'expiresAt')
+        && isOptionalTimestamp(data, 'createdAt')
+        && isOptionalTimestamp(data, 'updatedAt');
+    }
+
+    // ===============================================================
+    // Users Collection (Strict Owner-Only PII Separation)
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId)
+        && isValidUser(request.resource.data)
+        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+      allow delete: if isOwner(userId);
+    }
+
+    // ===============================================================
+    // Company Directory Collection (Non-PII Fleet Listing)
+    // ===============================================================
+
+    match /company_directory/{companyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && isValidCompanyDirectory(request.resource.data)
+        && (request.resource.data.createdBy == request.auth.uid || isDispatcher(companyId))
+        && (!companyExists(companyId) || isDispatcher(companyId));
+      allow update: if isDispatcher(companyId)
+        && isValidCompanyDirectory(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && (!('createdAt' in resource.data) || resource.data.createdAt == null || ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt));
+      allow delete: if isCompanyCreator(companyId);
+    }
+
+    // ===============================================================
     // Companies Collection & Subcollections
+    // ===============================================================
+
     match /companies/{companyId} {
-      // Authenticated users can read/list companies to view/join them
-      allow read, create: if isAuthenticated();
-      allow update, delete: if isDispatcher(companyId);
+      // Authenticated users can read companies to view/join workspaces
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.createdBy == request.auth.uid
+        && !('password' in request.resource.data)
+        && !('passwordHash' in request.resource.data)
+        && isValidCompany(request.resource.data);
+      allow update: if isDispatcher(companyId)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+        && isValidCompany(request.resource.data);
+      allow delete: if isCompanyCreator(companyId);
+
+      // Private Company Subcollection ('security' = dispatcher-only hashes/removals; 'profile' = member-only PII)
+      match /private/{docId} {
+        allow read: if (docId == 'security' && isDispatcher(companyId))
+          || (docId == 'profile' && isCompanyMember(companyId));
+        allow create, update: if isDispatcher(companyId) && (
+          (docId == 'security' && isValidCompanySecurity(request.resource.data))
+          || (docId == 'profile' && isValidCompanyProfile(request.resource.data))
+        );
+        allow delete: if (docId == 'security' || docId == 'profile') && isDispatcher(companyId);
+      }
+
+      // Join Requests Subcollection (Server-Verified Password Proof)
+      match /join_requests/{userId} {
+        allow read: if isOwner(userId) || isDispatcher(companyId);
+        allow create, update: if companyExists(companyId)
+          && isOwner(userId)
+          && isValidJoinRequest(request.resource.data);
+        allow delete: if isOwner(userId) || isDispatcher(companyId);
+      }
 
       // Members Subcollection
       match /members/{memberId} {
         allow read: if isCompanyMember(companyId);
-        allow write: if isDispatcher(companyId) || isOwner(memberId);
+        allow create: if companyExists(companyId)
+          && isValidMember(request.resource.data)
+          && (
+            isDispatcher(companyId) || (
+              isOwner(memberId) && (
+                isCompanyCreator(companyId) || (
+                  !isRemovedMember(companyId, memberId) &&
+                  (!getCompanyData(companyId).get('requirePassword', false) || hasValidJoinProof(companyId, memberId)) &&
+                  request.resource.data.get('permissions', {}) is map &&
+                  request.resource.data.get('permissions', {}).get('canCreateJob', false) == false &&
+                  request.resource.data.get('permissions', {}).get('canDeleteJob', false) == false &&
+                  request.resource.data.get('permissions', {}).get('canManageDrivers', false) == false &&
+                  request.resource.data.get('isPriorityDriver', false) == false &&
+                  !('rosterOrder' in request.resource.data) &&
+                  (!('role' in request.resource.data) || request.resource.data.role == 'driver')
+                )
+              )
+            )
+          );
+        allow update: if isValidMember(request.resource.data) && (
+          isDispatcher(companyId) || (
+            isOwner(memberId) &&
+            hasMemberDoc(companyId) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'permissions', 'isPriorityDriver', 'rosterOrder', 'role'
+            ])
+          )
+        );
+        allow delete: if isDispatcher(companyId) || isOwner(memberId);
       }
 
       // Jobs Subcollection
       match /jobs/{jobId} {
         allow read: if isCompanyMember(companyId);
-        allow create, delete: if isDispatcher(companyId);
-        allow update: if isCompanyMember(companyId);
+        allow create: if companyExists(companyId)
+          && isDispatcher(companyId)
+          && isValidJob(request.resource.data)
+          && 'jobName' in request.resource.data && request.resource.data.jobName.size() >= 1
+          && 'origin' in request.resource.data && request.resource.data.origin.size() >= 1
+          && request.resource.data.get('createdBy', request.auth.uid) == request.auth.uid;
+        allow update: if isValidJob(request.resource.data)
+          && (!('createdBy' in resource.data) || request.resource.data.createdBy == resource.data.createdBy)
+          && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          && (
+            isDispatcher(companyId) || (
+              isCompanyMember(companyId) && (
+                (
+                  isAssignedDriverOnJob(resource.data) &&
+                  request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                    'assignedDrivers', 'assignedDriverIds', 'completedDrivers', 'status',
+                    'startedAt', 'completedAt', 'updatedAt',
+                    'lastMessageTimestamp', 'stops', 'trackingToken', 'pod',
+                    'vehicleId', 'vehicleLabel'
+                  ]) &&
+                  !(request.resource.data.status in ['cancelled', 'archived'])
+                ) || (
+                  !isAssignedDriverOnJob(resource.data) &&
+                  !(resource.data.status in ['completed', 'cancelled', 'archived']) &&
+                  isAssignedDriverOnJob(request.resource.data) &&
+                  request.resource.data.get('assignedDrivers', []) is list &&
+                  resource.data.get('assignedDrivers', []) is list &&
+                  request.resource.data.get('assignedDrivers', []).size() == resource.data.get('assignedDrivers', []).size() + 1 &&
+                  request.resource.data.get('assignedDrivers', []).hasAll(resource.data.get('assignedDrivers', [])) &&
+                  request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                    'assignedDrivers', 'assignedDriverIds', 'status', 'startedAt', 'updatedAt',
+                    'vehicleId', 'vehicleLabel'
+                  ]) &&
+                  request.resource.data.status in ['assigned', 'in-progress']
+                ) || (
+                  request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                    'lastMessageTimestamp', 'updatedAt'
+                  ])
+                )
+              )
+            )
+          );
+        allow delete: if canDeleteJobs(companyId);
 
         // Job Chat Subcollection
         match /chat/{chatId} {
-          allow read, write: if isCompanyMember(companyId);
+          allow read: if isCompanyMember(companyId);
+          allow create: if isCompanyMember(companyId)
+            && exists(/databases/$(database)/documents/companies/$(companyId)/jobs/$(jobId))
+            && request.resource.data.senderId == request.auth.uid
+            && isValidChatMessage(request.resource.data);
+          allow update: if isValidChatMessage(request.resource.data)
+            && request.resource.data.senderId == resource.data.senderId
+            && (!('timestamp' in resource.data) || request.resource.data.timestamp == resource.data.timestamp)
+            && (
+              isDispatcher(companyId) || (
+                isCompanyMember(companyId) && (
+                  resource.data.get('senderId', '') == request.auth.uid ||
+                  resource.data.get('driverId', '') == request.auth.uid
+                )
+              )
+            );
+          allow delete: if isDispatcher(companyId) || (
+            isCompanyMember(companyId) && (
+              resource.data.get('senderId', '') == request.auth.uid ||
+              resource.data.get('driverId', '') == request.auth.uid
+            )
+          );
         }
 
         // Job Notes Subcollection
         match /notes/{noteId} {
-          allow read, write: if isCompanyMember(companyId);
+          allow read: if isCompanyMember(companyId);
+          allow create: if isCompanyMember(companyId)
+            && exists(/databases/$(database)/documents/companies/$(companyId)/jobs/$(jobId))
+            && request.resource.data.driverId == request.auth.uid
+            && isValidNote(request.resource.data);
+          allow update: if isValidNote(request.resource.data)
+            && request.resource.data.driverId == resource.data.driverId
+            && (!('timestamp' in resource.data) || request.resource.data.timestamp == resource.data.timestamp)
+            && (
+              isDispatcher(companyId) || (
+                isCompanyMember(companyId) && (
+                  resource.data.get('senderId', '') == request.auth.uid ||
+                  resource.data.get('driverId', '') == request.auth.uid
+                )
+              )
+            );
+          allow delete: if isDispatcher(companyId) || (
+            isCompanyMember(companyId) && (
+              resource.data.get('senderId', '') == request.auth.uid ||
+              resource.data.get('driverId', '') == request.auth.uid
+            )
+          );
         }
 
         // Job Expenses Subcollection
         match /expenses/{expenseId} {
-          allow read, create: if isCompanyMember(companyId);
-          allow update, delete: if isDispatcher(companyId) || (isAuthenticated() && resource.data.driverId == request.auth.uid);
+          allow read: if isCompanyMember(companyId);
+          allow create: if isCompanyMember(companyId)
+            && exists(/databases/$(database)/documents/companies/$(companyId)/jobs/$(jobId))
+            && request.resource.data.driverId == request.auth.uid
+            && request.resource.data.get('status', 'submitted') == 'submitted'
+            && isValidExpense(request.resource.data, companyId, jobId);
+          allow update: if isValidExpense(request.resource.data, companyId, jobId)
+            && request.resource.data.driverId == resource.data.driverId
+            && (!('companyId' in resource.data) || request.resource.data.companyId == resource.data.companyId)
+            && (!('timestamp' in resource.data) || request.resource.data.timestamp == resource.data.timestamp)
+            && (
+              isDispatcher(companyId) || (
+                isCompanyMember(companyId) &&
+                resource.data.driverId == request.auth.uid &&
+                resource.data.get('status', 'submitted') == 'submitted' &&
+                request.resource.data.get('status', 'submitted') == 'submitted' &&
+                !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reviewedAt', 'reviewedBy', 'reviewNote'])
+              )
+            );
+          allow delete: if isDispatcher(companyId) || (
+            isCompanyMember(companyId) &&
+            resource.data.driverId == request.auth.uid &&
+            resource.data.get('status', 'submitted') == 'submitted'
+          );
+        }
+
+        // Job GPS Breadcrumbs Subcollection
+        match /breadcrumbs/{chunkId} {
+          allow read: if isCompanyMember(companyId);
+          allow create: if isCompanyMember(companyId)
+            && exists(/databases/$(database)/documents/companies/$(companyId)/jobs/$(jobId))
+            && request.resource.data.driverId == request.auth.uid
+            && isValidBreadcrumbChunk(request.resource.data, companyId, jobId);
+          allow update: if isDispatcher(companyId)
+            && isValidBreadcrumbChunk(request.resource.data, companyId, jobId)
+            && request.resource.data.driverId == resource.data.driverId
+            && (!('companyId' in resource.data) || request.resource.data.companyId == resource.data.companyId)
+            && (!('jobId' in resource.data) || request.resource.data.jobId == resource.data.jobId)
+            && (!('createdAt' in resource.data) || resource.data.createdAt == null || request.resource.data.createdAt == resource.data.createdAt);
+          allow delete: if isDispatcher(companyId);
         }
       }
 
       // Active Drivers Subcollection
       match /active_drivers/{driverId} {
-        // Dispatchers can read all active drivers.
-        // Drivers can read their own location record or teammate location records.
         allow read: if isCompanyMember(companyId) && (
           isDispatcher(companyId) ||
           isOwner(driverId) ||
           (resource != null && resource.data.activeJobId != null)
         );
-
-        // A driver can only update/create their own location document
-        allow write: if isCompanyMember(companyId) && isOwner(driverId);
+        allow create: if isCompanyMember(companyId)
+          && isOwner(driverId)
+          && isValidActiveDriver(request.resource.data);
+        allow update: if isCompanyMember(companyId)
+          && isOwner(driverId)
+          && isValidActiveDriver(request.resource.data);
+        allow delete: if isCompanyMember(companyId) && (isOwner(driverId) || isDispatcher(companyId));
       }
+
+      // Vehicles Subcollection (Fleet Asset Registry)
+      match /vehicles/{vehicleId} {
+        allow read: if isCompanyMember(companyId);
+        allow create: if companyExists(companyId)
+          && isDispatcher(companyId)
+          && isValidVehicle(request.resource.data);
+        allow update: if isValidVehicle(request.resource.data)
+          && (!('createdAt' in resource.data) || resource.data.createdAt == null || ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt))
+          && (
+            isDispatcher(companyId) || (
+              isCompanyMember(companyId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'odometerMiles', 'lastInspectionStatus', 'lastInspectionAt', 'status', 'updatedAt'
+              ])
+              && (request.resource.data.status == resource.data.status || request.resource.data.status == 'out_of_service')
+            )
+          );
+        allow delete: if isDispatcher(companyId);
+      }
+
+      // DVIR Inspections Subcollection
+      match /inspections/{inspectionId} {
+        allow read: if isCompanyMember(companyId);
+        allow create: if companyExists(companyId)
+          && isCompanyMember(companyId)
+          && request.resource.data.driverId == request.auth.uid
+          && isValidInspection(request.resource.data, companyId);
+        allow update: if isDispatcher(companyId)
+          && isValidInspection(request.resource.data, companyId)
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.driverId == resource.data.driverId
+          && (!('createdAt' in resource.data) || resource.data.createdAt == null || ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt));
+        allow delete: if isDispatcher(companyId);
+      }
+    }
+
+    // ===============================================================
+    // Public Customer Live Tracking Collection (Token-Scoped)
+    // ===============================================================
+
+    match /public_tracking/{token} {
+      allow get: if token.size() >= 20 && token.size() <= 128
+        && (
+          resource == null
+          || (
+            (
+              resource.data.get('revoked', false) != true
+              && (
+                !('expiresAt' in resource.data)
+                || resource.data.expiresAt == null
+                || (resource.data.expiresAt is timestamp && request.time <= resource.data.expiresAt)
+              )
+            )
+            || (isAuthenticated() && isCompanyMember(resource.data.companyId))
+          )
+        );
+      allow list: if false;
+      allow create: if isAuthenticated()
+        && token.size() >= 20 && token.size() <= 128
+        && isValidPublicTracking(request.resource.data)
+        && isCompanyMember(request.resource.data.companyId)
+        && exists(/databases/$(database)/documents/companies/$(request.resource.data.companyId)/jobs/$(request.resource.data.jobId))
+        && (
+          isDispatcher(request.resource.data.companyId)
+          || isAssignedDriverOnJob(get(/databases/$(database)/documents/companies/$(request.resource.data.companyId)/jobs/$(request.resource.data.jobId)).data)
+        );
+      allow update: if isAuthenticated()
+        && isValidPublicTracking(request.resource.data)
+        && isCompanyMember(resource.data.companyId)
+        && request.resource.data.companyId == resource.data.companyId
+        && request.resource.data.jobId == resource.data.jobId
+        && (!('createdAt' in resource.data) || resource.data.createdAt == null || ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt))
+        && (
+          isDispatcher(resource.data.companyId)
+          || (
+            exists(/databases/$(database)/documents/companies/$(resource.data.companyId)/jobs/$(request.resource.data.jobId))
+            && isAssignedDriverOnJob(get(/databases/$(database)/documents/companies/$(resource.data.companyId)/jobs/$(request.resource.data.jobId)).data)
+            && (resource.data.get('revoked', false) != true || request.resource.data.get('revoked', false) == true)
+          )
+        );
+      allow delete: if isAuthenticated() && resource != null && isDispatcher(resource.data.companyId);
+    }
+
+    // ===============================================================
+    // Collection-Group Read Rule for Company-Wide Expense Ledger
+    // ===============================================================
+
+    match /{path=**}/expenses/{expenseId} {
+      allow read: if resource.data.get('companyId', '') != '' && isCompanyMember(resource.data.companyId);
     }
   }
 }

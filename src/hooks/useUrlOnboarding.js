@@ -2,19 +2,21 @@ import { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useToastStore } from '../store/useToastStore';
 import { useCompany } from './useFirebase';
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export function useUrlOnboarding() {
   const currentUser = useAppStore(state => state.currentUser);
   const companyId = useAppStore(state => state.companyId);
+  const clearCompany = useAppStore(state => state.clearCompany);
   const setSelectedJobId = useAppStore(state => state.setSelectedJobId);
   const addToast = useToastStore(state => state.addToast);
   const { joinCompany, loadCompany } = useCompany();
 
-  const processedRef = useRef(false);
+  const companyProcessedRef = useRef(false);
+  const jobProcessedRef = useRef(false);
 
-  // Capture URL search parameters on initial load and store in sessionStorage if needed
+  // Capture URL search parameters on initial load and store in sessionStorage
   useEffect(() => {
     try {
       const searchParams = new URLSearchParams(window.location.search);
@@ -32,102 +34,109 @@ export function useUrlOnboarding() {
     }
   }, []);
 
-  // Process onboarding once user is logged in
+  // Phase 1: Process company onboarding once user is authenticated
   useEffect(() => {
-    if (!currentUser || processedRef.current) return;
+    if (!currentUser || companyProcessedRef.current) return;
 
-    const processOnboarding = async () => {
-      const pendingCompany = sessionStorage.getItem('vecto_pending_company');
-      const pendingJob = sessionStorage.getItem('vecto_pending_job');
+    const pendingCompany = sessionStorage.getItem('vecto_pending_company');
+    const pendingJob = sessionStorage.getItem('vecto_pending_job');
+    if (!pendingCompany && !pendingJob) return;
 
-      if (!pendingCompany && !pendingJob) return;
+    companyProcessedRef.current = true;
 
-      processedRef.current = true;
+    const processCompanyOnboarding = async () => {
       const targetCompanyId = pendingCompany || companyId;
+      if (!targetCompanyId) return;
 
       try {
-        if (targetCompanyId) {
-          // Ensure driver is added to the company and user profile
-          const isUserInCompany = currentUser.companies?.includes(targetCompanyId);
-          
-          if (!isUserInCompany) {
-            // Join company automatically
-            const compDoc = await getDoc(doc(db, 'companies', targetCompanyId));
-            if (compDoc.exists()) {
-              await updateDoc(doc(db, 'users', currentUser.id), { companies: arrayUnion(targetCompanyId) });
-              await setDoc(doc(db, `companies/${targetCompanyId}/members/${currentUser.id}`), {
-                email: currentUser.email || '',
-                name: currentUser.name || currentUser.email || 'New Driver',
-                joinedAt: serverTimestamp(),
-                permissions: { canCreateJob: false, canDeleteJob: false, canManageDrivers: false }
-              });
-
-              // Add driver to active company drivers list
-              await setDoc(doc(db, `companies/${targetCompanyId}/active_drivers/${currentUser.id}`), {
-                name: currentUser.name || currentUser.email || 'Driver',
-                email: currentUser.email || '',
-                status: 'Available',
-                timestamp: serverTimestamp()
-              });
-
-              useAppStore.setState(state => ({
-                currentUser: {
-                  ...state.currentUser,
-                  companies: [...(state.currentUser.companies || []), targetCompanyId]
-                }
-              }));
-
-              addToast(`Added to company drivers list!`, "success");
+        const isUserInCompany = currentUser.companies?.includes(targetCompanyId);
+        if (!isUserInCompany) {
+          const res = await joinCompany(targetCompanyId);
+          if (res?.requiresPassword) {
+            addToast("Please enter the fleet access password to complete onboarding.", "info");
+            if (companyId && companyId !== targetCompanyId) {
+              clearCompany();
             }
+            if (window.history.replaceState) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+            return;
           }
-
-          // Load active company into store
+          addToast("Added to company drivers list!", "success");
+        } else {
           await loadCompany(targetCompanyId);
         }
 
-        // Process Job Onboarding if job ID is provided
-        if (pendingJob && targetCompanyId) {
-          const jobRef = doc(db, `companies/${targetCompanyId}/jobs/${pendingJob}`);
-          const jobDoc = await getDoc(jobRef);
+        sessionStorage.removeItem('vecto_pending_company');
+        if (window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      } catch (err) {
+        console.error("Error processing company onboarding from URL:", err);
+        sessionStorage.removeItem('vecto_pending_company');
+        sessionStorage.removeItem('vecto_pending_job');
+        addToast("Onboarding setup incomplete: " + err.message, "error");
+      }
+    };
 
-          if (jobDoc.exists()) {
-            const jobData = jobDoc.data();
-            const currentAssigned = jobData.assignedDrivers || [];
-            const isAlreadyAssigned = currentAssigned.some(d => d.id === currentUser.id);
+    processCompanyOnboarding();
+  }, [currentUser, companyId, joinCompany, loadCompany, clearCompany, addToast]);
 
-            if (!isAlreadyAssigned) {
-              const updatedDrivers = [
-                ...currentAssigned,
-                { id: currentUser.id, name: currentUser.name || currentUser.email || 'Driver' }
-              ];
+  // Phase 2: Process job onboarding once active company matches target company
+  useEffect(() => {
+    if (!currentUser || !companyId || jobProcessedRef.current) return;
 
-              let updates = { assignedDrivers: updatedDrivers };
-              if (jobData.status === 'unassigned') {
-                updates.status = 'in-progress';
-              }
+    const pendingCompany = sessionStorage.getItem('vecto_pending_company');
+    const pendingJob = sessionStorage.getItem('vecto_pending_job');
+    if (!pendingJob) return;
+    if (pendingCompany && pendingCompany !== companyId) return;
 
-              await updateDoc(jobRef, updates);
-              addToast(`Assigned to job: ${jobData.jobName || 'Selected Job'}`, "success");
+    jobProcessedRef.current = true;
+
+    const processJobOnboarding = async () => {
+      try {
+        const jobRef = doc(db, `companies/${companyId}/jobs/${pendingJob}`);
+        const jobDoc = await getDoc(jobRef);
+
+        if (jobDoc.exists()) {
+          const jobData = jobDoc.data();
+          const currentAssigned = jobData.assignedDrivers || [];
+          const isAlreadyAssigned = currentAssigned.some(d => d.id === currentUser.id);
+
+          if (!isAlreadyAssigned) {
+            const updatedDrivers = [
+              ...currentAssigned,
+              { id: currentUser.id, name: currentUser.name || currentUser.email || 'Driver' }
+            ];
+
+            const updates = {
+              assignedDrivers: updatedDrivers,
+              assignedDriverIds: updatedDrivers.map(d => d.id)
+            };
+            if (jobData.status === 'unassigned') {
+              updates.status = 'in-progress';
             }
 
-            setSelectedJobId(pendingJob);
-          } else {
-            addToast("Job link expired or not found.", "warning");
+            await updateDoc(jobRef, updates);
+            addToast(`Assigned to job: ${jobData.jobName || 'Selected Job'}`, "success");
           }
-        }
 
-        // Clean up URL parameters and session storage
+          setSelectedJobId(pendingJob);
+        } else {
+          addToast("Job link expired or not found.", "warning");
+        }
+      } catch (err) {
+        console.error("Error processing job onboarding from URL:", err);
+        addToast("Could not open linked job: " + err.message, "error");
+      } finally {
         sessionStorage.removeItem('vecto_pending_company');
         sessionStorage.removeItem('vecto_pending_job');
         if (window.history.replaceState) {
           window.history.replaceState(null, '', window.location.pathname);
         }
-      } catch (err) {
-        console.error("Error processing onboarding from URL:", err);
-        addToast("Onboarding setup incomplete: " + err.message, "error");
       }
     };
 
-    processOnboarding();
-  }, [currentUser, companyId, loadCompany, setSelectedJobId, addToast]);
+    processJobOnboarding();
+  }, [currentUser, companyId, setSelectedJobId, addToast]);
 }

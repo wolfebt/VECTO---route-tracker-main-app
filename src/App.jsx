@@ -1,36 +1,44 @@
 import React from 'react';
 import { useAppStore } from './store/useAppStore';
-import { useAuth, useCompany, useJobs } from './hooks/useFirebase';
+import { useAuth, useWorkspaceSync, useJobs } from './hooks/useFirebase';
 import { useUrlOnboarding } from './hooks/useUrlOnboarding';
 import { useLocationSharing } from './hooks/useLocationSharing';
 import { useNativeDevice } from './hooks/useNativeDevice';
 import { useCarAppSync } from './hooks/useCarAppSync';
+import { useNotifications } from './hooks/useNotifications';
+import { useGeofenceArrival } from './hooks/useGeofenceArrival';
+import { useRouteWeather } from './hooks/useRouteWeather';
 import Auth from './components/Auth';
 import CompanySelector from './components/CompanySelector';
 import Sidebar from './components/layout/Sidebar';
 import MapArea from './components/layout/MapArea';
 import JobDetails from './components/jobs/JobDetails';
-import SettingsModal from './components/modals/SettingsModal';
-import MapSettingsModal from './components/modals/MapSettingsModal';
-import CreateJobModal from './components/modals/CreateJobModal';
-import AdminSettingsModal from './components/modals/AdminSettingsModal';
-import CompanySettingsModal from './components/modals/CompanySettingsModal';
-import ProfileModal from './components/modals/ProfileModal';
-import UserGuideModal from './components/modals/UserGuideModal';
-import TechnicalsModal from './components/modals/TechnicalsModal';
-import DevelopmentModal from './components/modals/DevelopmentModal';
-import InviteModal from './components/modals/InviteModal';
-import JobReportModal from './components/modals/JobReportModal';
-import LogProgressModal from './components/modals/LogProgressModal';
-import LogExpenseModal from './components/modals/LogExpenseModal';
-import DriverRosterModal from './components/modals/DriverRosterModal';
-import ExpenseLedgerModal from './components/modals/ExpenseLedgerModal';
-import OperationsBoard from './components/operations/OperationsBoard';
-import ToastContainer from './components/layout/ToastContainer';
+import GeofencePromptBanner from './components/jobs/GeofencePromptBanner';
+const CustomerTrackingView = React.lazy(() => import('./components/CustomerTrackingView'));
+const OperationsBoard = React.lazy(() => import('./components/operations/OperationsBoard'));
+const SettingsModal = React.lazy(() => import('./components/modals/SettingsModal'));
+const MapSettingsModal = React.lazy(() => import('./components/modals/MapSettingsModal'));
+const CreateJobModal = React.lazy(() => import('./components/modals/CreateJobModal'));
+const AdminSettingsModal = React.lazy(() => import('./components/modals/AdminSettingsModal'));
+const CompanySettingsModal = React.lazy(() => import('./components/modals/CompanySettingsModal'));
+const ProfileModal = React.lazy(() => import('./components/modals/ProfileModal'));
+const UserGuideModal = React.lazy(() => import('./components/modals/UserGuideModal'));
+const TechnicalsModal = React.lazy(() => import('./components/modals/TechnicalsModal'));
+const DevelopmentModal = React.lazy(() => import('./components/modals/DevelopmentModal'));
+const InviteModal = React.lazy(() => import('./components/modals/InviteModal'));
+const JobReportModal = React.lazy(() => import('./components/modals/JobReportModal'));
+const LogProgressModal = React.lazy(() => import('./components/modals/LogProgressModal'));
+const LogExpenseModal = React.lazy(() => import('./components/modals/LogExpenseModal'));
+const PodCaptureModal = React.lazy(() => import('./components/modals/PodCaptureModal'));
+const DriverRosterModal = React.lazy(() => import('./components/modals/DriverRosterModal'));
+const ExpenseLedgerModal = React.lazy(() => import('./components/modals/ExpenseLedgerModal'));
+const FleetVehiclesModal = React.lazy(() => import('./components/modals/FleetVehiclesModal'));
+const DvirModal = React.lazy(() => import('./components/modals/DvirModal'));
+const FleetAnalyticsModal = React.lazy(() => import('./components/modals/FleetAnalyticsModal'));
 import { Settings, Map, List, FileText, LayoutDashboard } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 
-function App() {
+function AuthenticatedApp() {
   const { isAuthReady, mobileView, setMobileView, showSplash, fadeSplash, setShowSplash, setFadeSplash, mainView, setMainView } = useAppStore();
   const currentUser = useAppStore(state => state.currentUser);
   const companyId = useAppStore(state => state.companyId);
@@ -40,8 +48,20 @@ function App() {
   const openModal = useAppStore(state => state.openModal);
   const mapsApiKey = useAppStore(state => state.mapsApiKey);
   const routeInfo = useAppStore(state => state.routeInfo);
-  
-  const [weather, setWeather] = React.useState(null);
+  const routeWeather = useAppStore(state => state.routeWeather);
+
+  const [isDesktop, setIsDesktop] = React.useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true
+  );
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = (e) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   // Splash Screen Lifecycle
   React.useEffect(() => {
@@ -50,43 +70,17 @@ function App() {
     if (showSplash && !fadeSplash && isAuthReady) {
       fadeTimer = setTimeout(() => {
         setFadeSplash(true);
-      }, 1500); // Show splash for at least 1.5s
+      }, 1500);
     } else if (showSplash && fadeSplash) {
       hideTimer = setTimeout(() => {
         setShowSplash(false);
-      }, 500); // 500ms fade duration
+      }, 500);
     }
     return () => {
       clearTimeout(fadeTimer);
       clearTimeout(hideTimer);
     };
   }, [showSplash, fadeSplash, isAuthReady, setFadeSplash, setShowSplash]);
-
-  React.useEffect(() => {
-    if (selectedJobId && routeInfo?.destinationCoords) {
-      const { lat, lng } = routeInfo.destinationCoords;
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph`)
-        .then(res => res.json())
-        .then(data => {
-            if (data?.current_weather) {
-                const code = data.current_weather.weathercode;
-                let desc = "Clear";
-                if (code >= 1 && code <= 3) desc = "Partly Cloudy";
-                else if (code >= 51 && code <= 67) desc = "Rain";
-                else if (code >= 71 && code <= 77) desc = "Snow";
-                else if (code >= 95) desc = "Thunderstorm";
-                
-                setWeather({
-                   temp: data.current_weather.temperature,
-                   desc
-                });
-            }
-        })
-        .catch(console.error);
-    } else {
-      setWeather(null);
-    }
-  }, [routeInfo?.destinationCoords, selectedJobId]);
 
   const touchStartRef = React.useRef(null);
 
@@ -121,37 +115,27 @@ function App() {
     const deltaY = endY - touchStartRef.current.y;
     const duration = Date.now() - touchStartRef.current.time;
 
-    // Trigger swipe if horizontal displacement is >= 50px, dominant over vertical movement, and under 600ms
     if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2 && duration < 600) {
       if (deltaX < 0) {
-        // Swipe Left (finger drags right to left) -> Slide to Right Panel (Job Info / Sidebar)
         setMobileViewAndResize('sidebar');
       } else {
-        // Swipe Right (finger drags left to right) -> Slide to Left Panel (Map)
         setMobileViewAndResize('map');
       }
     }
     touchStartRef.current = null;
   };
   
-  // Initialize auth listener
   useAuth();
-  
-  // Listen to active company members (updates isDispatchView)
-  useCompany();
-
-  // Process QR code & URL parameters for company/job onboarding
+  useWorkspaceSync();
   useUrlOnboarding();
-
-  // Automatically start location sharing when app is up
   useLocationSharing();
-
-  // Initialize native status bar and hardware back button
   useNativeDevice();
 
-  // Synchronize jobs with Android Auto dashboard
   const jobs = useJobs();
   useCarAppSync(jobs);
+  useNotifications(jobs);
+  useGeofenceArrival(jobs);
+  useRouteWeather(selectedJobId, routeInfo, jobs);
 
   const splashScreen = showSplash ? (
     <div className={`fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b0f19] transition-opacity duration-500 ease-in-out ${fadeSplash ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
@@ -182,7 +166,7 @@ function App() {
   }
 
   return (
-    <APIProvider apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyAE5hZasEM931EdAJptCOcNAzxZT9JVvIU'}>
+    <APIProvider apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
       {splashScreen}
       <div 
         onTouchStart={handleTouchStart}
@@ -191,7 +175,6 @@ function App() {
       >
         {/* Thin Mobile Top Navigation Bar */}
         <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-slate-950/90 backdrop-blur-2xl border-b border-white/10 px-3 pt-[env(safe-area-inset-top,0px)] h-[calc(3rem+env(safe-area-inset-top,0px))] flex items-center justify-between shadow-xl">
-          {/* Left: Branding */}
           <div className="flex items-center space-x-2">
             <button 
               onClick={handleGoHome}
@@ -203,7 +186,6 @@ function App() {
             </button>
           </div>
 
-          {/* Center: Thin View Switcher Segment Control */}
           <div className="flex items-center bg-slate-900/90 border border-white/15 p-0.5 rounded-lg shadow-inner">
             <button 
               onClick={() => {
@@ -247,11 +229,22 @@ function App() {
             </button>
           </div>
 
-          {/* Right: Settings */}
           <div className="flex items-center space-x-2">
-            {selectedJobId && weather && (
-              <span className="text-yellow-400 text-xs font-medium" title={weather.desc}>
-                🌡️ {weather.temp}°F
+            {selectedJobId && routeWeather?.hazards?.length > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                  routeWeather.highestSeverity === 'critical'
+                    ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                    : 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                }`}
+                title={routeWeather.hazards.map((h) => `${h.title} (${h.segment})`).join(' • ')}
+              >
+                ⚠️ {routeWeather.hazards.length}
+              </span>
+            )}
+            {selectedJobId && routeWeather?.destinationWeather && (
+              <span className="text-yellow-400 text-xs font-medium" title={routeWeather.destinationWeather.desc}>
+                🌡️ {Math.round(routeWeather.destinationWeather.temp)}°F
               </span>
             )}
             <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-1.5 transition-colors hover:bg-white/5 rounded-full" title="Settings">
@@ -263,26 +256,29 @@ function App() {
         {/* Main Content Area */}
         {mainView === 'operations' ? (
           <div className="h-full pt-[calc(3rem+env(safe-area-inset-top,0px))] md:pt-0">
-            <OperationsBoard />
+            <React.Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center bg-[#0b0f19] text-slate-400 text-xs">
+                  Loading Operations Board...
+                </div>
+              }
+            >
+              <OperationsBoard />
+            </React.Suspense>
           </div>
         ) : (
-          /* Carousel Slider (Mobile: 2-panel slider; Desktop: side-by-side flex) */
           <div 
             className={`flex h-full w-[200vw] md:w-full transition-transform duration-300 ease-out pt-[calc(3rem+env(safe-area-inset-top,0px))] md:pt-0 ${
               mobileView === 'sidebar' ? '-translate-x-[100vw] md:translate-x-0' : 'translate-x-0'
             }`}
           >
-            {/* Panel 1 (Left Side on Mobile / Main Map on Desktop): Map Area */}
+            {/* Panel 1: Map Area */}
             <div className="w-[100vw] md:w-auto md:flex-1 relative z-0 h-full shrink-0 md:shrink">
               <MapArea />
-              {selectedJobId && (
-                <div className="hidden md:block">
-                  <JobDetails />
-                </div>
-              )}
+              {selectedJobId && isDesktop && <JobDetails />}
             </div>
             
-            {/* Panel 2 (Right Side on Mobile / Right Sidebar on Desktop): Job Info & Sidebar */}
+            {/* Panel 2: Job Info & Sidebar */}
             <div className="w-[100vw] md:w-96 glass-panel z-10 shrink-0 relative h-full flex flex-col border-l border-white/5 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
               {/* Desktop Only Sidebar Header */}
               <div className="hidden md:flex p-4 border-b border-white/10 justify-between items-center bg-slate-900/40 backdrop-blur-md shrink-0">
@@ -306,9 +302,21 @@ function App() {
                     <LayoutDashboard size={13} className="text-purple-400" />
                     <span>Ops Board</span>
                   </button>
-                  {selectedJobId && weather && (
-                    <span className="text-yellow-400 text-xs font-medium mr-2" title={weather.desc}>
-                      🌡️ {weather.temp}°F {weather.desc}
+                  {selectedJobId && routeWeather?.hazards?.length > 0 && (
+                    <span
+                      className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
+                        routeWeather.highestSeverity === 'critical'
+                          ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                          : 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                      }`}
+                      title={routeWeather.hazards.map((h) => `${h.title} (${h.segment})`).join(' • ')}
+                    >
+                      ⚠️ {routeWeather.hazards.length} Hazard{routeWeather.hazards.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {selectedJobId && routeWeather?.destinationWeather && (
+                    <span className="text-yellow-400 text-xs font-medium mr-2" title={routeWeather.destinationWeather.desc}>
+                      🌡️ {Math.round(routeWeather.destinationWeather.temp)}°F {routeWeather.destinationWeather.desc}
                     </span>
                   )}
                   <button onClick={() => openModal('settings')} aria-label="Settings" className="text-gray-400 hover:text-primary-400 p-2 transition-colors hover:bg-white/5 rounded-full" title="Settings">
@@ -317,41 +325,74 @@ function App() {
                 </div>
               </div>
 
-              {/* Content Container */}
+              {/* Single-mount responsive Content Container */}
               <div className="flex-1 overflow-y-auto relative flex flex-col min-h-0">
-                {/* Mobile View: JobDetails if selected, else Sidebar */}
-                <div className="md:hidden h-full flex flex-col flex-1">
-                  {selectedJobId ? <JobDetails /> : <Sidebar />}
-                </div>
-                {/* Desktop View: Always Sidebar */}
-                <div className="hidden md:block h-full p-4 overflow-y-auto">
-                  <Sidebar />
-                </div>
+                {!isDesktop && selectedJobId ? (
+                  <div className="h-full flex flex-col flex-1">
+                    <JobDetails />
+                  </div>
+                ) : (
+                  <div className="h-full md:p-4 overflow-y-auto flex flex-col flex-1">
+                    <Sidebar />
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
         
         {/* Modals */}
-        <SettingsModal />
-        <MapSettingsModal />
-        <CreateJobModal />
-        <AdminSettingsModal />
-        <CompanySettingsModal />
-        <DriverRosterModal />
-        <ExpenseLedgerModal />
-        <ProfileModal />
-        <UserGuideModal />
-        <TechnicalsModal />
-        <DevelopmentModal />
-        <InviteModal />
-        <JobReportModal />
-        <LogProgressModal />
-        <LogExpenseModal />
-        <ToastContainer />
+        <React.Suspense fallback={null}>
+          <SettingsModal />
+          <MapSettingsModal />
+          <CreateJobModal />
+          <AdminSettingsModal />
+          <CompanySettingsModal />
+          <DriverRosterModal />
+          <ExpenseLedgerModal />
+          <FleetVehiclesModal />
+          <DvirModal />
+          <FleetAnalyticsModal />
+          <ProfileModal />
+          <UserGuideModal />
+          <TechnicalsModal />
+          <DevelopmentModal />
+          <InviteModal />
+          <JobReportModal />
+          <LogProgressModal />
+          <LogExpenseModal />
+          <PodCaptureModal />
+        </React.Suspense>
+        <GeofencePromptBanner />
       </div>
     </APIProvider>
   );
+}
+
+function App() {
+  const trackToken = React.useMemo(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('track') || '';
+    } catch {
+      return '';
+    }
+  }, []);
+
+  if (trackToken) {
+    return (
+      <React.Suspense
+        fallback={
+          <div className="flex h-screen items-center justify-center bg-[#0b0f19] text-slate-400 text-xs">
+            Loading Live Tracking...
+          </div>
+        }
+      >
+        <CustomerTrackingView token={trackToken} />
+      </React.Suspense>
+    );
+  }
+
+  return <AuthenticatedApp />;
 }
 
 export default App;

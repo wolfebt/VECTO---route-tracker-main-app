@@ -2,6 +2,7 @@ package vecto.app.car;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
@@ -12,29 +13,74 @@ import androidx.car.app.model.ListTemplate;
 import androidx.car.app.model.MessageTemplate;
 import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
+
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
-/**
- * Screen displaying the active job queue and stops on the vehicle infotainment center.
- */
-public class JobListCarScreen extends Screen {
+public class JobListCarScreen extends Screen implements DefaultLifecycleObserver {
+    private static final int MAX_LIST_ITEMS = 6;
+
+    private final SharedPreferences prefs;
+    private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
 
     public JobListCarScreen(@NonNull CarContext carContext) {
         super(carContext);
+        this.prefs = carContext.getSharedPreferences(VectoCarBridgePlugin.PREFS_NAME, Context.MODE_PRIVATE);
+        this.prefsListener = (sharedPreferences, key) -> {
+            if (VectoCarBridgePlugin.KEY_JOBS_JSON.equals(key)
+                    || VectoCarBridgePlugin.KEY_COMPANY_NAME.equals(key)
+                    || VectoCarBridgePlugin.KEY_ACTIVE_JOB_ID.equals(key)) {
+                invalidate();
+            }
+        };
+        getLifecycle().addObserver(this);
+    }
+
+    @Override
+    public void onStart(@NonNull LifecycleOwner owner) {
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener);
+    }
+
+    @Override
+    public void onStop(@NonNull LifecycleOwner owner) {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
+    }
+
+    public static String formatStatusLabel(String status) {
+        if (status == null || status.trim().isEmpty()) {
+            return "Assigned";
+        }
+        String normalized = status.trim().toLowerCase();
+        switch (normalized) {
+            case "in-progress":
+            case "in progress":
+                return "In Progress";
+            case "completed":
+            case "complete":
+                return "Completed";
+            case "pending-completion":
+                return "Pending Completion";
+            case "assigned":
+                return "Assigned";
+            case "unassigned":
+                return "Unassigned";
+            default:
+                return status;
+        }
     }
 
     @NonNull
     @Override
     public Template onGetTemplate() {
-        SharedPreferences prefs = getCarContext().getSharedPreferences(VectoCarBridgePlugin.PREFS_NAME, Context.MODE_PRIVATE);
         String jobsJson = prefs.getString(VectoCarBridgePlugin.KEY_JOBS_JSON, "[]");
-        String companyName = prefs.getString(VectoCarBridgePlugin.KEY_COMPANY_NAME, "Vecto");
-
-        JSONArray jobs = new JSONArray();
-        try {
-            jobs = new JSONArray(jobsJson);
-        } catch (Exception ignored) {}
+        String companyName = prefs.getString(VectoCarBridgePlugin.KEY_COMPANY_NAME, "Vecto Fleet");
+        if (companyName == null || companyName.trim().isEmpty()) {
+            companyName = "Vecto Fleet";
+        }
+        String headerTitle = companyName + " — Jobs";
 
         ActionStrip actionStrip = new ActionStrip.Builder()
                 .addAction(new Action.Builder()
@@ -43,45 +89,56 @@ public class JobListCarScreen extends Screen {
                         .build())
                 .build();
 
+        JSONArray jobs;
+        try {
+            jobs = new JSONArray(jobsJson);
+        } catch (JSONException e) {
+            jobs = new JSONArray();
+        }
+
         if (jobs.length() == 0) {
-            return new MessageTemplate.Builder("No active jobs assigned.\nPlease select a job in the Vecto app on your phone.")
-                    .setTitle(companyName.isEmpty() ? "Vecto Fleet" : companyName)
+            return new MessageTemplate.Builder(
+                    "No active jobs assigned to you.\nOpen Vecto on your phone to check dispatch."
+            )
+                    .setTitle(headerTitle)
                     .setHeaderAction(Action.APP_ICON)
                     .setActionStrip(actionStrip)
                     .build();
         }
 
-        ItemList.Builder itemListBuilder = new ItemList.Builder();
-        // Android Auto limits list items while driving to avoid distraction (max 6)
-        int maxItems = Math.min(jobs.length(), 6);
+        ItemList.Builder listBuilder = new ItemList.Builder();
+        int count = Math.min(jobs.length(), MAX_LIST_ITEMS);
 
-        for (int i = 0; i < maxItems; i++) {
-            try {
-                JSONObject jobObj = jobs.getJSONObject(i);
-                final String jobStr = jobObj.toString();
-                String title = jobObj.optString("title", "Stop #" + (i + 1));
-                String destination = jobObj.optString("destination", "");
-                String customer = jobObj.optString("customer", "");
-                String status = jobObj.optString("status", "Pending");
+        for (int i = 0; i < count; i++) {
+            JSONObject job = jobs.optJSONObject(i);
+            if (job == null) continue;
 
-                Row.Builder row = new Row.Builder()
-                        .setTitle(title)
-                        .addText(destination.isEmpty() ? (customer.isEmpty() ? "No address specified" : customer) : destination)
-                        .addText("Status: " + status)
-                        .setOnClickListener(() -> {
-                            getScreenManager().push(new JobDetailCarScreen(getCarContext(), jobStr));
-                        });
+            final String title = job.optString("title", "Unnamed Job");
+            final String stopSummary = job.optString("stopSummary", "");
+            final String destination = job.optString("destination", "No destination");
+            final String locationText = !stopSummary.isEmpty() ? stopSummary : destination;
+            final String statusLabel = formatStatusLabel(job.optString("status", "assigned"));
+            final String customer = job.optString("customer", "");
 
-                itemListBuilder.addItem(row.build());
-            } catch (Exception e) {
-                // Ignore malformed job item
-            }
+            String metaLine = customer.isEmpty() ? statusLabel : statusLabel + " • " + customer;
+
+            Row row = new Row.Builder()
+                    .setTitle(title)
+                    .addText(metaLine)
+                    .addText(locationText)
+                    .setBrowsable(true)
+                    .setOnClickListener(() ->
+                            getScreenManager().push(new JobDetailCarScreen(getCarContext(), job))
+                    )
+                    .build();
+
+            listBuilder.addItem(row);
         }
 
         return new ListTemplate.Builder()
-                .setTitle(companyName.isEmpty() ? "Assigned Jobs" : companyName)
+                .setSingleList(listBuilder.build())
+                .setTitle(headerTitle)
                 .setHeaderAction(Action.APP_ICON)
-                .setSingleList(itemListBuilder.build())
                 .setActionStrip(actionStrip)
                 .build();
     }

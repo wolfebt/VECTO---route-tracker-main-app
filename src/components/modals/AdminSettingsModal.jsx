@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
 import { useCompany } from '../../hooks/useFirebase';
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Trash2, X } from 'lucide-react';
 
@@ -26,9 +26,18 @@ export default function AdminSettingsModal() {
   };
 
   const handleRemoveMember = async (memberId) => {
-    if (!window.confirm("Are you sure you want to remove this member?")) return;
+    if (!window.confirm("Are you sure you want to remove this member from the fleet?")) return;
     try {
+      await setDoc(
+        doc(db, 'companies', companyId, 'private', 'security'),
+        {
+          removedMemberIds: arrayUnion(memberId),
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      );
       await deleteDoc(doc(db, `companies/${companyId}/members/${memberId}`));
+      await deleteDoc(doc(db, `companies/${companyId}/active_drivers/${memberId}`)).catch(() => {});
       addToast("Member removed.", "success");
     } catch (e) {
       addToast("Failed to remove member: " + e.message, "error");

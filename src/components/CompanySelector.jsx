@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useToastStore } from '../store/useToastStore';
 import { useCompany, useAuth } from '../hooks/useFirebase';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, setDoc, doc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { hashCompanyPassword } from '../utils/crypto';
 import { LogOut, Building2, CheckCircle2, ShieldAlert, PlusCircle, Users, Radio, RefreshCw } from 'lucide-react';
 
 export default function CompanySelector() {
@@ -12,6 +13,8 @@ export default function CompanySelector() {
   const addToast = useToastStore((state) => state.addToast);
   const { joinCompany, loadCompany } = useCompany();
   const { logout } = useAuth();
+  const loadCompanyRef = useRef(loadCompany);
+  loadCompanyRef.current = loadCompany;
   
   const [activeTab, setActiveTab] = useState('myFleets'); // 'myFleets' | 'join' | 'create'
   const [allCompanies, setAllCompanies] = useState([]);
@@ -21,32 +24,31 @@ export default function CompanySelector() {
   const [joinPassword, setJoinPassword] = useState('');
   const [selectedCompanyIdToJoin, setSelectedCompanyIdToJoin] = useState(null);
 
-  useEffect(() => {
-    // Auto-load last used company on initial load if user hasn't explicitly clicked "Change Company"
-    const hasCleared = sessionStorage.getItem('vecto_has_cleared_company');
-    const userComps = currentUser?.companies || [];
-    if (!currentCompanyId && userComps.length > 0 && !hasCleared) {
-      const lastCompanyId = localStorage.getItem('vecto_last_company_id');
-      const targetId = (lastCompanyId && userComps.includes(lastCompanyId)) 
-        ? lastCompanyId 
-        : userComps[0];
-      loadCompany(targetId);
-    }
-    // Always fetch companies list to ensure portal displays current options
-    fetchAllCompanies();
-  }, [currentUser?.id, currentCompanyId]);
-
-  const fetchAllCompanies = async () => {
+  const fetchAllCompanies = useCallback(async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(collection(db, 'companies'));
-      const comps = [];
-      snap.forEach(d => comps.push({ id: d.id, ...d.data() }));
+      const [dirSnap, compSnap] = await Promise.all([
+        getDocs(collection(db, 'company_directory')).catch(() => null),
+        getDocs(collection(db, 'companies')).catch(() => null)
+      ]);
+      const mergedMap = new Map();
+      if (compSnap) {
+        compSnap.forEach(d => mergedMap.set(d.id, { id: d.id, ...d.data() }));
+      }
+      if (dirSnap) {
+        dirSnap.forEach(d => {
+          const prev = mergedMap.get(d.id) || {};
+          mergedMap.set(d.id, { ...prev, id: d.id, ...d.data() });
+        });
+      }
+      const comps = Array.from(mergedMap.values());
       setAllCompanies(comps);
 
       if (currentUser?.id) {
         const userComps = currentUser.companies || [];
-        const createdComps = comps.filter(c => c.createdBy === currentUser.id && !userComps.includes(c.id));
+        const createdComps = comps.filter(
+          c => c.createdBy === currentUser.id && !userComps.includes(c.id) && !(c.removedMemberIds || []).includes(currentUser.id)
+        );
         if (createdComps.length > 0) {
           const newIds = createdComps.map(c => c.id);
           const updatedComps = [...userComps, ...newIds];
@@ -56,9 +58,20 @@ export default function CompanySelector() {
           }));
         }
 
-        const joined = comps.filter(c => userComps.includes(c.id) || c.createdBy === currentUser.id || c.createdBy === currentUser.email);
-        if (joined.length === 0 && comps.length > 0) {
-          setActiveTab('join');
+        const pendingCompany = sessionStorage.getItem('vecto_pending_company');
+        if (pendingCompany) {
+          const pendingComp = comps.find(c => c.id === pendingCompany);
+          if (pendingComp && pendingComp.requirePassword && !(pendingComp.removedMemberIds || []).includes(currentUser.id)) {
+            setActiveTab('join');
+            setSelectedCompanyIdToJoin(pendingCompany);
+          }
+        } else {
+          const joined = comps.filter(
+            c => !(c.removedMemberIds || []).includes(currentUser.id) && (userComps.includes(c.id) || c.createdBy === currentUser.id)
+          );
+          if (joined.length === 0 && comps.length > 0) {
+            setActiveTab('join');
+          }
         }
       }
     } catch (e) {
@@ -66,16 +79,34 @@ export default function CompanySelector() {
       addToast("Failed to fetch companies list: " + e.message, "error");
     }
     setLoading(false);
-  };
+  }, [currentUser?.id, currentUser?.companies, addToast]);
+
+  useEffect(() => {
+    // Auto-load last used company on initial load if user hasn't explicitly clicked "Change Company"
+    const hasCleared = sessionStorage.getItem('vecto_has_cleared_company');
+    const pendingCompany = sessionStorage.getItem('vecto_pending_company');
+    const userComps = useAppStore.getState().currentUser?.companies || [];
+    if (!currentCompanyId && userComps.length > 0 && !hasCleared && !pendingCompany) {
+      const lastCompanyId = localStorage.getItem('vecto_last_company_id');
+      const targetId = (lastCompanyId && userComps.includes(lastCompanyId)) 
+        ? lastCompanyId 
+        : userComps[0];
+      loadCompanyRef.current(targetId);
+    }
+    // Always fetch companies list to ensure portal displays current options
+    fetchAllCompanies();
+  }, [currentUser?.id, currentCompanyId, fetchAllCompanies]);
+
+  const isRemovedFrom = (c) => Boolean(currentUser?.id && (c.removedMemberIds || []).includes(currentUser.id));
 
   const isCompanyJoined = (c) => {
-    if (!currentUser) return false;
+    if (!currentUser || isRemovedFrom(c)) return false;
     const userComps = currentUser.companies || [];
-    return userComps.includes(c.id) || c.createdBy === currentUser.id || c.createdBy === currentUser.email;
+    return userComps.includes(c.id) || c.createdBy === currentUser.id;
   };
 
   const joinedCompanies = allCompanies.filter(isCompanyJoined);
-  const availableCompanies = allCompanies.filter(c => !isCompanyJoined(c));
+  const availableCompanies = allCompanies.filter(c => !isCompanyJoined(c) && !isRemovedFrom(c));
 
   const handleSelectJoined = async (companyId) => {
     try {
@@ -90,6 +121,7 @@ export default function CompanySelector() {
   const handleJoinClick = (companyId) => {
     const comp = allCompanies.find(c => c.id === companyId);
     if (comp?.requirePassword) {
+      setJoinPassword('');
       setSelectedCompanyIdToJoin(companyId);
     } else {
       handleJoin(companyId);
@@ -100,11 +132,13 @@ export default function CompanySelector() {
     try {
       const res = await joinCompany(companyId, password);
       if (res.requiresPassword) {
-         addToast("Invalid Password", "error");
+        addToast("Invalid Password", "error");
       } else {
-         sessionStorage.removeItem('vecto_has_cleared_company');
-         setSelectedCompanyIdToJoin(null);
-         addToast("Joined company successfully!", "success");
+        sessionStorage.removeItem('vecto_has_cleared_company');
+        sessionStorage.removeItem('vecto_pending_company');
+        setSelectedCompanyIdToJoin(null);
+        setJoinPassword('');
+        addToast("Joined company successfully!", "success");
       }
     } catch (e) {
       addToast("Failed to join: " + e.message, "error");
@@ -116,15 +150,29 @@ export default function CompanySelector() {
     if (!newCompanyName.trim()) return;
     try {
       setLoading(true);
+      const trimmedPassword = newCompanyPassword.trim();
       const newCompRef = await addDoc(collection(db, 'companies'), {
         name: newCompanyName.trim(),
-        requirePassword: !!newCompanyPassword,
-        password: newCompanyPassword || null,
+        requirePassword: !!trimmedPassword,
         createdBy: currentUser.id,
         createdAt: serverTimestamp()
       });
+      await setDoc(doc(db, 'company_directory', newCompRef.id), {
+        name: newCompanyName.trim(),
+        requirePassword: !!trimmedPassword,
+        createdBy: currentUser.id,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }).catch(() => {});
+      if (trimmedPassword) {
+        const passwordHash = await hashCompanyPassword(newCompRef.id, trimmedPassword);
+        await setDoc(doc(db, 'companies', newCompRef.id, 'private', 'security'), {
+          passwordHash,
+          updatedAt: serverTimestamp()
+        });
+      }
       sessionStorage.removeItem('vecto_has_cleared_company');
-      await joinCompany(newCompRef.id, newCompanyPassword);
+      await joinCompany(newCompRef.id, trimmedPassword);
       addToast("Company created successfully!", "success");
     } catch (e) {
       addToast("Failed to create company: " + e.message, "error");
@@ -220,7 +268,16 @@ export default function CompanySelector() {
                   autoFocus
                 />
                 <div className="flex justify-end space-x-3">
-                  <button onClick={() => setSelectedCompanyIdToJoin(null)} className="btn-secondary text-sm px-4 py-2 cursor-pointer">Cancel</button>
+                  <button
+                    onClick={() => {
+                      sessionStorage.removeItem('vecto_pending_company');
+                      sessionStorage.removeItem('vecto_pending_job');
+                      setSelectedCompanyIdToJoin(null);
+                    }}
+                    className="btn-secondary text-sm px-4 py-2 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
                   <button onClick={() => handleJoin(selectedCompanyIdToJoin, joinPassword)} className="btn-primary text-sm px-4 py-2 cursor-pointer">Join Company</button>
                 </div>
              </div>

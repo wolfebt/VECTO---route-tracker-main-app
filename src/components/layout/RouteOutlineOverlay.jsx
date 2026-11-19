@@ -1,29 +1,26 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import ReactDOM from 'react-dom';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { useMap } from '@vis.gl/react-google-maps';
+import { useAppStore } from '../../store/useAppStore';
 
-function getSqDist(p1, p2) {
+function getSqDist(p1, p2, cosLat = 1) {
   const dx = p1.lat - p2.lat;
-  const dy = p1.lng - p2.lng;
+  const dy = (p1.lng - p2.lng) * cosLat;
   return dx * dx + dy * dy;
 }
 
-/**
- * Splits a route path array into travelledPath (solid line) and ongoingPath (dashed line)
- * based on the driver's current position.
- */
-export function splitPathAtLocation(path, driverLocation) {
-  if (!path || path.length < 2) {
-    return { travelledPath: [], ongoingPath: path || [] };
-  }
+function normalizePath(path) {
+  if (!Array.isArray(path)) return [];
+  return path
+    .map((pt) => ({
+      lat: typeof pt.lat === 'function' ? pt.lat() : Number(pt.lat),
+      lng: typeof pt.lng === 'function' ? pt.lng() : Number(pt.lng),
+    }))
+    .filter((pt) => !isNaN(pt.lat) && !isNaN(pt.lng));
+}
 
-  const normalizedPath = path.map(pt => ({
-    lat: typeof pt.lat === 'function' ? pt.lat() : Number(pt.lat),
-    lng: typeof pt.lng === 'function' ? pt.lng() : Number(pt.lng)
-  })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng));
-
-  if (normalizedPath.length < 2) {
-    return { travelledPath: [], ongoingPath: normalizedPath };
+function splitPathAtLocation(normalizedPath, driverLocation) {
+  if (!normalizedPath || normalizedPath.length < 2) {
+    return { travelledPath: [], ongoingPath: normalizedPath || [] };
   }
 
   if (!driverLocation || typeof driverLocation.lat !== 'number' || typeof driverLocation.lng !== 'number') {
@@ -36,6 +33,7 @@ export function splitPathAtLocation(path, driverLocation) {
     return { travelledPath: [], ongoingPath: normalizedPath };
   }
 
+  const cosLat = Math.max(0.2, Math.cos((dLat * Math.PI) / 180));
   let minSqDist = Infinity;
   let bestIndex = 0;
   let closestPoint = null;
@@ -45,17 +43,17 @@ export function splitPathAtLocation(path, driverLocation) {
     const p2 = normalizedPath[i + 1];
 
     const dx = p2.lat - p1.lat;
-    const dy = p2.lng - p1.lng;
+    const dy = (p2.lng - p1.lng) * cosLat;
     const lenSq = dx * dx + dy * dy;
 
     let t = 0;
     if (lenSq > 0) {
-      t = ((dLat - p1.lat) * dx + (dLng - p1.lng) * dy) / lenSq;
+      t = ((dLat - p1.lat) * dx + ((dLng - p1.lng) * cosLat) * dy) / lenSq;
       t = Math.max(0, Math.min(1, t));
     }
 
-    const proj = { lat: p1.lat + t * dx, lng: p1.lng + t * dy };
-    const sqDist = getSqDist({ lat: dLat, lng: dLng }, proj);
+    const proj = { lat: p1.lat + t * (p2.lat - p1.lat), lng: p1.lng + t * (p2.lng - p1.lng) };
+    const sqDist = getSqDist({ lat: dLat, lng: dLng }, proj, cosLat);
 
     if (sqDist < minSqDist) {
       minSqDist = sqDist;
@@ -69,422 +67,397 @@ export function splitPathAtLocation(path, driverLocation) {
     return { travelledPath: [], ongoingPath: normalizedPath };
   }
 
-  const travelledPath = [
-    ...normalizedPath.slice(0, bestIndex + 1),
-    closestPoint
-  ];
-
-  const ongoingPath = [
-    closestPoint,
-    ...normalizedPath.slice(bestIndex + 1)
-  ];
+  const travelledPath = [...normalizedPath.slice(0, bestIndex + 1), closestPoint];
+  const ongoingPath = [closestPoint, ...normalizedPath.slice(bestIndex + 1)];
 
   return { travelledPath, ongoingPath };
 }
 
-function convertPathToSvgD(latLngArray, projection) {
-  if (!latLngArray || !projection || latLngArray.length < 2) return '';
-  const points = latLngArray.map(pt => {
-    const latLngObj = (typeof pt.lat === 'function') ? pt : new window.google.maps.LatLng(pt.lat, pt.lng);
-    const pix = projection.fromLatLngToDivPixel(latLngObj);
-    return pix ? `${pix.x.toFixed(1)},${pix.y.toFixed(1)}` : null;
-  }).filter(Boolean);
+/**
+ * WebGL Google Maps Polyline renderer for 'solid', 'alternating', and 'traffic' modes.
+ * Triggers zero React re-renders during pan, zoom, or dash animation.
+ */
+function PolylineRouteLayer({ map, fullPath, travelledPath, ongoingPath, stepTraffics, routeColor, routeStyle }) {
+  const mainView = useAppStore((s) => s.mainView);
+  const mobileView = useAppStore((s) => s.mobileView);
+  const [isDocVisible, setIsDocVisible] = useState(() =>
+    typeof document !== 'undefined' ? document.visibilityState !== 'hidden' : true
+  );
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(min-width: 768px)').matches : true
+  );
 
-  if (points.length < 2) return '';
-  return `M ${points[0]} L ` + points.slice(1).join(' L ');
-}
+  const casingRef = useRef(null);
+  const travelledRef = useRef(null);
+  const ongoingRef = useRef(null);
+  const trafficLinesRef = useRef([]);
 
-function PortalToDiv({ targetDiv, children }) {
-  if (!targetDiv) return null;
-  return ReactDOM.createPortal(children, targetDiv);
-}
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisibility = () => setIsDocVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
-// Native Google Maps Polylines for guaranteed 100% mobile compatibility
-function NativeRoutePolylines({ map, travelledPath, ongoingPath, routeColor }) {
-  const travelledPolylineRef = useRef(null);
-  const travelledShadowRef = useRef(null);
-  const ongoingPolylineRef = useRef(null);
-  const ongoingShadowRef = useRef(null);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = (e) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const shouldAnimate =
+    routeStyle !== 'traffic' &&
+    routeStyle !== 'solid' &&
+    isDocVisible &&
+    mainView === 'map' &&
+    (isDesktop || mobileView === 'map');
 
   useEffect(() => {
     if (!map || !window.google?.maps) return;
 
-    // 1. Travelled Shadow
-    travelledShadowRef.current = new window.google.maps.Polyline({
+    casingRef.current = new window.google.maps.Polyline({
       map,
       strokeColor: '#0f172a',
-      strokeOpacity: 0.5,
+      strokeOpacity: 0.6,
       strokeWeight: 10,
       zIndex: 2,
-      clickable: false
+      clickable: false,
     });
 
-    // 2. Travelled Solid Polyline
-    travelledPolylineRef.current = new window.google.maps.Polyline({
+    travelledRef.current = new window.google.maps.Polyline({
       map,
-      strokeColor: routeColor || '#3b82f6',
-      strokeOpacity: 0.95,
+      strokeColor: '#3b82f6',
+      strokeOpacity: 0.9,
+      strokeWeight: 6,
+      zIndex: 4,
+      clickable: false,
+    });
+
+    ongoingRef.current = new window.google.maps.Polyline({
+      map,
+      strokeColor: '#3b82f6',
+      strokeOpacity: 1,
       strokeWeight: 6,
       zIndex: 3,
-      clickable: false
-    });
-
-    // Dash symbol for ongoing route
-    const dashSymbol = {
-      path: 'M 0,-1 L 0,1',
-      strokeOpacity: 1,
-      strokeColor: routeColor || '#3b82f6',
-      scale: 4
-    };
-
-    // 3. Ongoing Dashed Polyline
-    ongoingPolylineRef.current = new window.google.maps.Polyline({
-      map,
-      strokeColor: routeColor || '#3b82f6',
-      strokeOpacity: 0,
-      icons: [{
-        icon: dashSymbol,
-        offset: '0',
-        repeat: '18px'
-      }],
-      strokeWeight: 5,
-      zIndex: 3,
-      clickable: false
-    });
-
-    // Shadow dash symbol
-    const shadowDashSymbol = {
-      path: 'M 0,-1 L 0,1',
-      strokeOpacity: 0.4,
-      strokeColor: '#0f172a',
-      scale: 6
-    };
-
-    // 4. Ongoing Shadow Polyline
-    ongoingShadowRef.current = new window.google.maps.Polyline({
-      map,
-      strokeColor: '#0f172a',
-      strokeOpacity: 0,
-      icons: [{
-        icon: shadowDashSymbol,
-        offset: '0',
-        repeat: '18px'
-      }],
-      strokeWeight: 8,
-      zIndex: 2,
-      clickable: false
+      clickable: false,
     });
 
     return () => {
-      if (travelledShadowRef.current) travelledShadowRef.current.setMap(null);
-      if (travelledPolylineRef.current) travelledPolylineRef.current.setMap(null);
-      if (ongoingShadowRef.current) ongoingShadowRef.current.setMap(null);
-      if (ongoingPolylineRef.current) ongoingPolylineRef.current.setMap(null);
+      casingRef.current?.setMap(null);
+      travelledRef.current?.setMap(null);
+      ongoingRef.current?.setMap(null);
+      trafficLinesRef.current.forEach((line) => line.setMap(null));
+      trafficLinesRef.current = [];
     };
   }, [map]);
 
   useEffect(() => {
-    if (!map) return;
+    if (!map || !window.google?.maps) return;
 
-    // Travelled Path -> Solid Line
-    if (travelledPath && travelledPath.length >= 2) {
-      travelledShadowRef.current?.setPath(travelledPath);
-      travelledShadowRef.current?.setVisible(true);
+    const color = routeColor || '#3b82f6';
+    let animTimer = null;
 
-      travelledPolylineRef.current?.setPath(travelledPath);
-      travelledPolylineRef.current?.setOptions({ strokeColor: routeColor || '#3b82f6' });
-      travelledPolylineRef.current?.setVisible(true);
+    // Reset previous traffic lines
+    trafficLinesRef.current.forEach((line) => line.setMap(null));
+    trafficLinesRef.current = [];
+
+    // Casing line across full path
+    if (fullPath.length >= 2) {
+      casingRef.current?.setPath(fullPath);
+      casingRef.current?.setOptions({ strokeWeight: routeStyle === 'traffic' ? 11 : 10, strokeOpacity: 0.6 });
+      casingRef.current?.setVisible(true);
     } else {
-      travelledShadowRef.current?.setVisible(false);
-      travelledPolylineRef.current?.setVisible(false);
+      casingRef.current?.setVisible(false);
     }
 
-    // Ongoing Path -> Dashed Line
-    if (ongoingPath && ongoingPath.length >= 2) {
-      const dashSymbol = {
-        path: 'M 0,-1 L 0,1',
-        strokeOpacity: 1,
-        strokeColor: routeColor || '#3b82f6',
-        scale: 4
-      };
-      const shadowDashSymbol = {
-        path: 'M 0,-1 L 0,1',
-        strokeOpacity: 0.4,
-        strokeColor: '#0f172a',
-        scale: 6
-      };
+    if (routeStyle === 'traffic') {
+      ongoingRef.current?.setVisible(false);
 
-      ongoingShadowRef.current?.setPath(ongoingPath);
-      ongoingShadowRef.current?.setOptions({
-        icons: [{ icon: shadowDashSymbol, offset: '0', repeat: '18px' }]
-      });
-      ongoingShadowRef.current?.setVisible(true);
+      if (travelledPath.length >= 2) {
+        travelledRef.current?.setPath(travelledPath);
+        travelledRef.current?.setOptions({ strokeColor: color, strokeOpacity: 0.4, strokeWeight: 6 });
+        travelledRef.current?.setVisible(true);
+      } else {
+        travelledRef.current?.setVisible(false);
+      }
 
-      ongoingPolylineRef.current?.setPath(ongoingPath);
-      ongoingPolylineRef.current?.setOptions({
-        strokeColor: routeColor || '#3b82f6',
-        icons: [{ icon: dashSymbol, offset: '0', repeat: '18px' }]
-      });
-      ongoingPolylineRef.current?.setVisible(true);
+      const segments = stepTraffics && stepTraffics.length > 0 ? stepTraffics : [{ path: fullPath, color }];
+      trafficLinesRef.current = segments
+        .map((seg) => {
+          const pts = normalizePath(seg.path);
+          if (pts.length < 2) return null;
+          return new window.google.maps.Polyline({
+            map,
+            path: pts,
+            strokeColor: seg.color || color,
+            strokeOpacity: 0.95,
+            strokeWeight: 6,
+            zIndex: 3,
+            clickable: false,
+          });
+        })
+        .filter(Boolean);
+    } else if (routeStyle === 'solid') {
+      if (travelledPath.length >= 2) {
+        travelledRef.current?.setPath(travelledPath);
+        travelledRef.current?.setOptions({ strokeColor: color, strokeOpacity: 0.45, strokeWeight: 6 });
+        travelledRef.current?.setVisible(true);
+      } else {
+        travelledRef.current?.setVisible(false);
+      }
+
+      if (ongoingPath.length >= 2) {
+        ongoingRef.current?.setPath(ongoingPath);
+        ongoingRef.current?.setOptions({
+          strokeColor: color,
+          strokeOpacity: 1,
+          strokeWeight: 6,
+          icons: [],
+        });
+        ongoingRef.current?.setVisible(true);
+      } else {
+        ongoingRef.current?.setVisible(false);
+      }
     } else {
-      ongoingShadowRef.current?.setVisible(false);
-      ongoingPolylineRef.current?.setVisible(false);
+      // 'alternating' mode: solid travelled + smoothly pulsing animated dash ongoing
+      if (travelledPath.length >= 2) {
+        travelledRef.current?.setPath(travelledPath);
+        travelledRef.current?.setOptions({ strokeColor: color, strokeOpacity: 0.95, strokeWeight: 6 });
+        travelledRef.current?.setVisible(true);
+      } else {
+        travelledRef.current?.setVisible(false);
+      }
+
+      if (ongoingPath.length >= 2) {
+        let step = 0;
+        const applyDashFrame = () => {
+          const offsetPx = (step * 1.5) % 24;
+          const opacity = 0.25 + 0.7 * (0.5 + 0.5 * Math.sin(step * 0.22));
+          ongoingRef.current?.setOptions({
+            strokeColor: color,
+            strokeOpacity: 0,
+            strokeWeight: 5,
+            icons: [
+              {
+                icon: {
+                  path: 'M 0,-1 L 0,1',
+                  strokeOpacity: opacity,
+                  strokeColor: color,
+                  scale: 4,
+                },
+                offset: `${offsetPx.toFixed(1)}px`,
+                repeat: '24px',
+              },
+            ],
+          });
+          step += 1;
+        };
+
+        ongoingRef.current?.setPath(ongoingPath);
+        applyDashFrame();
+        ongoingRef.current?.setVisible(true);
+        if (shouldAnimate) {
+          animTimer = window.setInterval(applyDashFrame, 120);
+        }
+      } else {
+        ongoingRef.current?.setVisible(false);
+      }
     }
-  }, [map, travelledPath, ongoingPath, routeColor]);
+
+    return () => {
+      if (animTimer) window.clearInterval(animTimer);
+      trafficLinesRef.current.forEach((line) => line.setMap(null));
+      trafficLinesRef.current = [];
+    };
+  }, [map, fullPath, travelledPath, ongoingPath, stepTraffics, routeColor, routeStyle, shouldAnimate]);
 
   return null;
 }
 
-export default function RouteOutlineOverlay({ path, stepTraffics = [], routeColor = '#3b82f6', routeStyle = 'outlined', jobId = 'default', driverLocation = null }) {
-  const map = useMap();
+/**
+ * Imperative HTML5 <canvas> OverlayView for hollow-core 'outlined' route rendering.
+ * Draws directly in draw() / bounds_changed without triggering React re-renders.
+ */
+function CanvasOutlinedOverlay({ map, travelledPath, ongoingPath, routeColor }) {
+  const dataRef = useRef({ travelledPath, ongoingPath, routeColor });
   const overlayRef = useRef(null);
-  const containerRef = useRef(null);
-  const [, setTick] = useState(0);
 
-  // Split path into travelled (solid) and ongoing (dash)
-  const { travelledPath, ongoingPath } = useMemo(() => {
-    return splitPathAtLocation(path, driverLocation);
-  }, [path, driverLocation]);
+  useEffect(() => {
+    dataRef.current = { travelledPath, ongoingPath, routeColor };
+    overlayRef.current?.draw();
+  }, [travelledPath, ongoingPath, routeColor]);
 
   useEffect(() => {
     if (!map || !window.google?.maps?.OverlayView) return;
 
-    class CustomOverlayView extends window.google.maps.OverlayView {
+    class HollowRouteCanvasOverlay extends window.google.maps.OverlayView {
       constructor() {
         super();
-        this.div = document.createElement('div');
-        this.div.style.position = 'absolute';
-        this.div.style.left = '0px';
-        this.div.style.top = '0px';
-        this.div.style.pointerEvents = 'none';
-        this.div.style.overflow = 'visible';
-        this.div.style.zIndex = '5';
+        this.canvas = document.createElement('canvas');
+        this.canvas.style.position = 'absolute';
+        this.canvas.style.pointerEvents = 'none';
+        this.canvas.style.zIndex = '5';
       }
 
       onAdd() {
         const panes = this.getPanes();
-        if (panes && panes.overlayLayer) {
-          panes.overlayLayer.appendChild(this.div);
+        if (panes?.overlayLayer) {
+          panes.overlayLayer.appendChild(this.canvas);
+        }
+      }
+
+      onRemove() {
+        if (this.canvas.parentNode) {
+          this.canvas.parentNode.removeChild(this.canvas);
         }
       }
 
       draw() {
-        const mapDiv = this.getMap()?.getDiv();
-        if (mapDiv) {
-          this.div.style.width = mapDiv.clientWidth + 'px';
-          this.div.style.height = mapDiv.clientHeight + 'px';
-        } else {
-          this.div.style.width = '100vw';
-          this.div.style.height = '100vh';
-        }
-        setTick(t => t + 1);
-      }
+        const projection = this.getProjection();
+        const currentMap = this.getMap();
+        const bounds = currentMap?.getBounds();
+        if (!projection || !bounds) return;
 
-      onRemove() {
-        if (this.div.parentNode) {
-          this.div.parentNode.removeChild(this.div);
-        }
-      }
+        const sw = projection.fromLatLngToDivPixel(bounds.getSouthWest());
+        const ne = projection.fromLatLngToDivPixel(bounds.getNorthEast());
+        if (!sw || !ne) return;
 
-      getProjectionObj() {
-        return this.getProjection();
+        const pad = 40;
+        const left = Math.min(sw.x, ne.x) - pad;
+        const top = Math.min(sw.y, ne.y) - pad;
+        const width = Math.max(1, Math.abs(ne.x - sw.x) + pad * 2);
+        const height = Math.max(1, Math.abs(sw.y - ne.y) + pad * 2);
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        this.canvas.style.left = `${left}px`;
+        this.canvas.style.top = `${top}px`;
+        this.canvas.style.width = `${width}px`;
+        this.canvas.style.height = `${height}px`;
+
+        const targetW = Math.round(width * dpr);
+        const targetH = Math.round(height * dpr);
+        if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
+          this.canvas.width = targetW;
+          this.canvas.height = targetH;
+        }
+
+        const ctx = this.canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        const { travelledPath: tPath, ongoingPath: oPath, routeColor: color } = dataRef.current;
+
+        const tracePoints = (pts) => {
+          if (!pts || pts.length < 2) return false;
+          ctx.beginPath();
+          let started = false;
+          for (let i = 0; i < pts.length; i++) {
+            const pix = projection.fromLatLngToDivPixel(new window.google.maps.LatLng(pts[i].lat, pts[i].lng));
+            if (!pix) continue;
+            const x = pix.x - left;
+            const y = pix.y - top;
+            if (!started) {
+              ctx.moveTo(x, y);
+              started = true;
+            } else {
+              ctx.lineTo(x, y);
+            }
+          }
+          return started;
+        };
+
+        // 1. Hollow-core ongoing route
+        if (tracePoints(oPath)) {
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+          ctx.lineWidth = 16;
+          ctx.stroke();
+
+          ctx.strokeStyle = color || '#3b82f6';
+          ctx.lineWidth = 13;
+          ctx.stroke();
+
+          ctx.save();
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
+          ctx.lineWidth = 6;
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // 2. Solid travelled route
+        if (tracePoints(tPath)) {
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          ctx.strokeStyle = color || '#3b82f6';
+          ctx.lineWidth = 6;
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     }
 
-    const overlay = new CustomOverlayView();
+    const overlay = new HollowRouteCanvasOverlay();
     overlay.setMap(map);
     overlayRef.current = overlay;
-    containerRef.current = overlay.div;
 
-    const listener = map.addListener('bounds_changed', () => {
-      setTick(t => t + 1);
+    const boundsListener = map.addListener('bounds_changed', () => {
+      overlay.draw();
     });
 
     return () => {
-      if (listener) window.google.maps.event.removeListener(listener);
+      window.google.maps.event.removeListener(boundsListener);
       overlay.setMap(null);
       overlayRef.current = null;
-      containerRef.current = null;
     };
   }, [map]);
 
-  const projection = overlayRef.current?.getProjectionObj();
+  return null;
+}
 
-  const fullD = projection && path ? convertPathToSvgD(path, projection) : '';
-  const travelledD = projection && travelledPath ? convertPathToSvgD(travelledPath, projection) : '';
-  const ongoingD = projection && ongoingPath ? convertPathToSvgD(ongoingPath, projection) : '';
+export default function RouteOutlineOverlay({
+  path,
+  stepTraffics = [],
+  routeColor = '#3b82f6',
+  routeStyle = 'alternating',
+  driverLocation = null,
+}) {
+  const map = useMap();
 
-  const cleanJobId = (jobId || 'job').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const maskId = `route-hollow-mask-${cleanJobId}`;
+  const normalizedFullPath = useMemo(() => normalizePath(path), [path]);
 
-  const stepSegments = (stepTraffics && stepTraffics.length > 0 && projection)
-    ? stepTraffics.map((step, idx) => ({
-        key: idx,
-        d: convertPathToSvgD(step.path, projection),
-        color: step.color || routeColor
-      })).filter(s => s.d)
-    : [];
+  const { travelledPath, ongoingPath } = useMemo(() => {
+    return splitPathAtLocation(normalizedFullPath, driverLocation);
+  }, [normalizedFullPath, driverLocation]);
 
-  return (
-    <>
-      {/* 1. Native Google Maps Polylines: Travelled = Solid, Ongoing = Dash */}
-      <NativeRoutePolylines
+  if (!map || normalizedFullPath.length < 2) return null;
+
+  if (routeStyle === 'outlined') {
+    return (
+      <CanvasOutlinedOverlay
         map={map}
         travelledPath={travelledPath}
         ongoingPath={ongoingPath}
         routeColor={routeColor}
       />
+    );
+  }
 
-      {/* 2. SVG Overlay for custom style effects (Outline, Alternating, Traffic) */}
-      {containerRef.current && projection && fullD && (
-        <PortalToDiv targetDiv={containerRef.current}>
-          <svg
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: '100%',
-              height: '100%',
-              pointerEvents: 'none',
-              overflow: 'visible',
-            }}
-          >
-            <defs>
-              <style>{`
-                @keyframes vectoRouteFadePulse {
-                  0%, 100% {
-                    opacity: 0.95;
-                    stroke-opacity: 0.95;
-                  }
-                  50% {
-                    opacity: 0.05;
-                    stroke-opacity: 0.05;
-                  }
-                }
-                @keyframes vectoRouteDashFlow {
-                  0% {
-                    stroke-dashoffset: 0;
-                  }
-                  100% {
-                    stroke-dashoffset: -104;
-                  }
-                }
-                .vecto-alternating-fade {
-                  animation: vectoRouteFadePulse 3s ease-in-out infinite, vectoRouteDashFlow 5s linear infinite;
-                }
-              `}</style>
-              <mask id={maskId}>
-                <rect x="-20000" y="-20000" width="50000" height="50000" fill="white" />
-                <path
-                  d={fullD}
-                  stroke="black"
-                  strokeWidth="7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              </mask>
-            </defs>
-
-            {/* Alternating Mode */}
-            {routeStyle === 'alternating' && (
-              <>
-                {travelledD && (
-                  <path
-                    d={travelledD}
-                    stroke={routeColor}
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                    strokeOpacity="0.95"
-                  />
-                )}
-                {ongoingD && (
-                  <path
-                    d={ongoingD}
-                    stroke={routeColor}
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                    strokeDasharray="24 16"
-                    className="vecto-alternating-fade"
-                  />
-                )}
-              </>
-            )}
-
-            {/* Outlined Mode */}
-            {routeStyle === 'outlined' && (
-              <>
-                <path
-                  d={fullD}
-                  stroke="#000000"
-                  strokeWidth="16"
-                  strokeOpacity="0.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                  mask={`url(#${maskId})`}
-                />
-                <path
-                  d={fullD}
-                  stroke={routeColor}
-                  strokeWidth="13"
-                  strokeOpacity="0.95"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                  mask={`url(#${maskId})`}
-                />
-              </>
-            )}
-
-            {/* Traffic Mode */}
-            {routeStyle === 'traffic' && (
-              <>
-                <path
-                  d={fullD}
-                  stroke="#000000"
-                  strokeWidth="16"
-                  strokeOpacity="0.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                  mask={`url(#${maskId})`}
-                />
-                {stepSegments.length > 0 ? (
-                  stepSegments.map(step => (
-                    <path
-                      key={step.key}
-                      d={step.d}
-                      stroke={step.color}
-                      strokeWidth="13"
-                      strokeOpacity="0.95"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                      mask={`url(#${maskId})`}
-                    />
-                  ))
-                ) : (
-                  <path
-                    d={fullD}
-                    stroke={routeColor}
-                    strokeWidth="13"
-                    strokeOpacity="0.95"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                    mask={`url(#${maskId})`}
-                  />
-                )}
-              </>
-            )}
-          </svg>
-        </PortalToDiv>
-      )}
-    </>
+  return (
+    <PolylineRouteLayer
+      map={map}
+      fullPath={normalizedFullPath}
+      travelledPath={travelledPath}
+      ongoingPath={ongoingPath}
+      stepTraffics={stepTraffics}
+      routeColor={routeColor}
+      routeStyle={routeStyle}
+    />
   );
 }

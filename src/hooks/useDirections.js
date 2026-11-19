@@ -1,29 +1,15 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useAppStore } from '../store/useAppStore';
-
-function hexToRgb(hex) {
-  if (!hex || typeof hex !== 'string') return [59, 130, 246];
-  let c = hex.replace('#', '').trim();
-  if (c.length === 3) c = c.split('').map(x => x + x).join('');
-  if (c.length !== 6) return [59, 130, 246];
-  const num = parseInt(c, 16);
-  if (isNaN(num)) return [59, 130, 246];
-  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
-}
-
-function rgbToHex(r, g, b) {
-  const toHex = (n) => Math.min(255, Math.max(0, Math.round(n))).toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
+import { useToastStore } from '../store/useToastStore';
+import { normalizeJobStops, getRemainingStops, applyWaypointOrder } from '../utils/stops';
+import { computeFleetRoute } from '../utils/googleRoutesAdapter';
 
 /**
- * Custom hook for Google Maps DirectionsService, DirectionsRenderer,
- * and live off-route / detour detection orchestration.
- * @param {Object} params
- * @param {Object} params.map - Google Map instance
- * @param {string} params.selectedJobId - Currently selected job ID
- * @param {Array} params.jobs - Array of job objects
+ * Custom hook using Google Routes API / DirectionsService routing,
+ * waypoint order persistence, and live off-route / detour detection.
  */
 export function useDirections({ map, selectedJobId, jobs }) {
   const routesLibrary = useMapsLibrary('routes');
@@ -34,78 +20,72 @@ export function useDirections({ map, selectedJobId, jobs }) {
   const setRouteInfo = useAppStore(state => state.setRouteInfo);
   const colors = useAppStore(state => state.colors);
   const currentLocation = useAppStore(state => state.currentLocation);
+  const companyId = useAppStore(state => state.companyId);
+  const currentUser = useAppStore(state => state.currentUser);
+  const isDispatchView = useAppStore(state => state.isDispatchView);
 
   const lastRouteSignature = useRef(null);
-  const accentPolylineRef = useRef(null);
-  const mainPolylineRef = useRef(null);
-  const animFrameRef = useRef(null);
+  const persistedStopSigRef = useRef(null);
+  const lastFittedJobIdRef = useRef(null);
+  const offRoutePolyRef = useRef(null);
   const consecutiveOffRouteRef = useRef(0);
   const lastRecalcLocationRef = useRef(null);
+  const routeMarkersRef = useRef([]);
 
-  const clearRoutePolylines = () => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
+  const clearCustomMarkers = useCallback(() => {
+    routeMarkersRef.current.forEach((m) => m.setMap(null));
+    routeMarkersRef.current = [];
+  }, []);
+
+  const renderCustomStopMarkers = useCallback((targetMap, normalized, routeOrigin) => {
+    clearCustomMarkers();
+    if (!targetMap || !window.google?.maps?.Marker || !normalized) return;
+
+    const extractLatLng = (raw) => {
+      if (!raw) return null;
+      const loc = raw.latLng || raw;
+      const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+      const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+      return typeof lat === 'number' && typeof lng === 'number' ? { lat, lng } : null;
+    };
+
+    const markerCoords = [];
+    const originPos =
+      extractLatLng(normalized.legs?.[0]?.startLocation) ||
+      extractLatLng(routeOrigin) ||
+      extractLatLng(normalized.overviewPath?.[0]);
+    if (originPos) {
+      markerCoords.push({ pos: originPos, label: 'A', title: 'Origin' });
     }
-    if (accentPolylineRef.current) {
-      accentPolylineRef.current.setMap(null);
-      accentPolylineRef.current = null;
-    }
-    if (mainPolylineRef.current) {
-      mainPolylineRef.current.setMap(null);
-      mainPolylineRef.current = null;
-    }
-  };
 
-  // Helper to parse directions response into routeInfo
-  const processDirectionsResponse = useCallback((response, job, color, isDetour = false) => {
-    if (!response.routes || response.routes.length === 0) return;
-
-    const route = response.routes[0];
-    const path = route.overview_path;
-
-    let totalSeconds = 0;
-    let totalNormalSeconds = 0;
-    let totalMeters = 0;
-    let stepTraffics = [];
-
-    route.legs.forEach(leg => {
-      const dur = leg.duration_in_traffic ? leg.duration_in_traffic.value : (leg.duration ? leg.duration.value : 0);
-      const normDur = leg.duration ? leg.duration.value : dur;
-      totalSeconds += dur;
-      totalNormalSeconds += normDur;
-      if (leg.distance) totalMeters += leg.distance.value;
-
-      const legRatio = normDur > 0 ? (dur / normDur) : 1;
-
-      if (leg.steps && leg.steps.length > 0) {
-        leg.steps.forEach(step => {
-          const sDur = step.duration_in_traffic ? step.duration_in_traffic.value : (step.duration ? step.duration.value : 0);
-          const sNorm = step.duration ? step.duration.value : sDur;
-          const ratio = sNorm > 0 ? (sDur / sNorm) : legRatio;
-
-          let stepColor = '#22c55e'; // Green: clear
-          if (ratio >= 1.25 || (sDur - sNorm) > 120) {
-            stepColor = '#ef4444'; // Red: heavy congestion
-          } else if (ratio >= 1.10 || (sDur - sNorm) > 30) {
-            stepColor = '#f97316'; // Orange: moderate delays
-          }
-
-          if (step.path && step.path.length > 0) {
-            stepTraffics.push({
-              path: step.path,
-              color: stepColor,
-              instructions: step.instructions ? step.instructions.replace(/<[^>]*>?/gm, '') : '',
-            });
-          }
+    (normalized.legs || []).forEach((leg, idx) => {
+      const endPos = extractLatLng(leg?.endLocation || leg?.end_location);
+      if (endPos) {
+        markerCoords.push({
+          pos: endPos,
+          label: String.fromCharCode(66 + (idx % 25)),
+          title: `Stop ${idx + 1}`,
         });
       }
     });
 
-    if (stepTraffics.length === 0 && path) {
-      stepTraffics.push({ path, color: '#22c55e' });
-    }
+    routeMarkersRef.current = markerCoords.map(
+      (pt) =>
+        new window.google.maps.Marker({
+          position: pt.pos,
+          map: targetMap,
+          label: pt.label,
+          title: pt.title,
+        })
+    );
+  }, [clearCustomMarkers]);
 
+  const applyNormalizedRoute = useCallback((normalized, job, color, isDetour = false, orderedStops = []) => {
+    if (!normalized) return;
+
+    const totalSeconds = normalized.totalSeconds || 0;
+    const totalNormalSeconds = normalized.totalNormalSeconds || totalSeconds;
+    const totalMeters = normalized.totalMeters || 0;
     const delaySeconds = Math.max(0, totalSeconds - totalNormalSeconds);
     const delayMinutes = Math.round(delaySeconds / 60);
 
@@ -125,30 +105,28 @@ export function useDirections({ map, selectedJobId, jobs }) {
     const m = Math.floor((totalSeconds % 3600) / 60);
     const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
 
-    const lastLeg = route.legs[route.legs.length - 1];
-    const endLoc = lastLeg ? lastLeg.end_location : null;
-    const destCoords = endLoc
-      ? (typeof endLoc.lat === 'function' ? { lat: endLoc.lat(), lng: endLoc.lng() } : { lat: endLoc.lat, lng: endLoc.lng })
-      : null;
-
-    const allSteps = route.legs.flatMap(leg => leg.steps);
-    const plainTextSteps = allSteps.map(step => {
-      return step.instructions ? step.instructions.replace(/<[^>]*>?/gm, '') : '';
-    }).filter(Boolean);
+    const totalDwellMinutes = (orderedStops || []).reduce(
+      (sum, s) => sum + (typeof s?.serviceMinutes === 'number' && s.status !== 'completed' ? s.serviceMinutes : 0),
+      0
+    );
 
     setRouteInfo({
       jobId: job.id,
       routeColor: color,
       distance: `${totalMiles} mi`,
       duration: timeStr,
-      destinationCoords: destCoords,
-      steps: plainTextSteps,
+      totalDwellMinutes,
+      destinationCoords: normalized.destinationCoords || null,
+      steps: normalized.plainTextSteps || [],
       trafficStatus,
       trafficText,
       delayMinutes,
-      overviewPath: path,
-      stepTraffics,
-      isDetour
+      overviewPath: normalized.overviewPath || [],
+      stepTraffics: normalized.stepTraffics || [],
+      isDetour,
+      orderedStops,
+      waypointOrder: normalized.waypointOrder || [],
+      routeSource: normalized.source,
     });
   }, [setRouteInfo]);
 
@@ -156,55 +134,76 @@ export function useDirections({ map, selectedJobId, jobs }) {
   useEffect(() => {
     if (!routesLibrary || !map) return;
 
-    const ds = new routesLibrary.DirectionsService();
+    const ds = routesLibrary.DirectionsService ? new routesLibrary.DirectionsService() : null;
     const dr = new routesLibrary.DirectionsRenderer({ 
       map,
-      polylineOptions: { strokeColor: 'transparent', strokeOpacity: 0 } // Suppress default renderer line so custom layered polylines render smoothly
+      suppressMarkers: false,
+      preserveViewport: true,
+      polylineOptions: { strokeColor: 'transparent', strokeOpacity: 0 }
     });
     setDirectionsService(ds);
     setDirectionsRenderer(dr);
 
     return () => {
       dr.setMap(null);
-      clearRoutePolylines();
+      clearCustomMarkers();
+      if (offRoutePolyRef.current) {
+        offRoutePolyRef.current.setMap(null);
+        offRoutePolyRef.current = null;
+      }
     };
-  }, [routesLibrary, map]);
+  }, [routesLibrary, map, clearCustomMarkers]);
 
-  // 2. Primary Route Calculation
+  // 2. Primary Route Calculation & Waypoint Order Persistence
   useEffect(() => {
-    if (!directionsService || !directionsRenderer) return;
+    if (!routesLibrary || !directionsRenderer) return;
 
     if (!selectedJobId) {
       directionsRenderer.setMap(null);
-      clearRoutePolylines();
+      clearCustomMarkers();
       lastRouteSignature.current = null;
+      lastFittedJobIdRef.current = null;
       return;
     }
 
     const job = jobs.find(j => j.id === selectedJobId);
     if (!job) {
       directionsRenderer.setMap(null);
-      clearRoutePolylines();
+      clearCustomMarkers();
       lastRouteSignature.current = null;
+      lastFittedJobIdRef.current = null;
       return;
     }
 
-    const dests = job.destinations || (job.destination ? [job.destination] : []);
-    if (dests.length === 0) {
+    const allStops = normalizeJobStops(job);
+    if (allStops.length === 0) {
       directionsRenderer.setMap(null);
-      clearRoutePolylines();
+      clearCustomMarkers();
       return;
     }
 
-    let waypoints = [];
-    let finalDest = dests[0];
+    const remainingStops = getRemainingStops(allStops);
+    const completedStops = allStops.filter(s => s.status === 'completed');
+    const isPartialRemaining = remainingStops.length > 0 && completedStops.length > 0 && job.status === 'in-progress';
+    const activeStops = isPartialRemaining ? remainingStops : allStops;
 
-    if (dests.length > 1) {
-      waypoints = dests.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
-      finalDest = dests[dests.length - 1];
+    const liveLoc = useAppStore.getState().currentLocation;
+    let routeOrigin = job.origin;
+    if (isPartialRemaining) {
+      if (liveLoc?.lat && liveLoc?.lng && window.google?.maps) {
+        routeOrigin = new window.google.maps.LatLng(liveLoc.lat, liveLoc.lng);
+      } else {
+        const lastDone = completedStops[completedStops.length - 1];
+        if (lastDone?.address) routeOrigin = lastDone.address;
+      }
     }
 
-    // Determine Polyline Color
+    const waypoints = activeStops.length > 1
+      ? activeStops.slice(0, -1).map(s => ({ location: s.address, stopover: true }))
+      : [];
+    const finalDest = activeStops[activeStops.length - 1].address;
+    const optimizeWaypoints = !isPartialRemaining && waypoints.length > 0 ? job.optimizeRoute !== false : false;
+
     let hash = 0;
     for (let i = 0; i < job.id.length; i++) {
       hash = job.id.charCodeAt(i) + ((hash << 5) - hash);
@@ -212,46 +211,95 @@ export function useDirections({ map, selectedJobId, jobs }) {
     const defaultColor = colors[Math.abs(hash) % colors.length];
     const color = job.routeColor || defaultColor;
 
-    const currentSignature = JSON.stringify({ origin: job.origin, dests, optimize: job.optimizeRoute, color });
+    const stopSignature = allStops.map(s => `${s.address}:${s.status}`).join('|');
+    const currentSignature = JSON.stringify({
+      origin: job.origin,
+      stopSignature,
+      optimize: job.optimizeRoute,
+      color,
+      partial: isPartialRemaining,
+    });
     if (lastRouteSignature.current === currentSignature) {
-      directionsRenderer.setMap(map);
       return;
     }
 
-    directionsRenderer.setMap(map);
+    let cancelled = false;
 
-    directionsService.route({
-      origin: job.origin,
+    computeFleetRoute({
+      routesLibrary,
+      directionsService,
+      origin: routeOrigin,
       destination: finalDest,
-      waypoints: waypoints,
-      optimizeWaypoints: waypoints.length > 0 ? job.optimizeRoute !== false : false,
-      travelMode: 'DRIVING',
-      drivingOptions: {
-        departureTime: new Date(), // Traffic-aware ETA
+      waypoints,
+      optimizeWaypoints,
+    }).then((normalized) => {
+      if (cancelled) return;
+      if (normalized.source === 'routes_v2') {
+        directionsRenderer.setMap(null);
+        renderCustomStopMarkers(map, normalized, routeOrigin);
+      } else {
+        clearCustomMarkers();
+        directionsRenderer.setMap(map);
+        directionsRenderer.setDirections(normalized.rawDirectionsResponse);
       }
-    }).then(response => {
-      directionsRenderer.setDirections(response);
       lastRouteSignature.current = currentSignature;
-      processDirectionsResponse(response, job, color, false);
+
+      if (lastFittedJobIdRef.current !== job.id && normalized.bounds && map) {
+        map.fitBounds(normalized.bounds, 56);
+        lastFittedJobIdRef.current = job.id;
+      }
+
+      const orderedStops = isPartialRemaining
+        ? allStops
+        : applyWaypointOrder(allStops, normalized.waypointOrder || [], normalized.legs || []);
+
+      applyNormalizedRoute(normalized, job, color, false, orderedStops);
+
+      if (!isPartialRemaining && companyId && currentUser?.id) {
+        const orderChanged = Array.isArray(normalized.waypointOrder) && normalized.waypointOrder.some((val, idx) => val !== idx);
+        const needsStopInit = !Array.isArray(job.stops) || job.stops.length === 0 || allStops.some(s => s.lat == null || s.lng == null);
+        const persistSig = `${job.id}:${orderedStops.map(s => `${s.address}:${s.lat}:${s.lng}:${s.order}`).join('|')}`;
+        const isAssigned = (job.assignedDrivers || []).some(d => d.id === currentUser.id);
+
+        if ((orderChanged || needsStopInit) && persistedStopSigRef.current !== persistSig && (isDispatchView || isAssigned)) {
+          persistedStopSigRef.current = persistSig;
+          const jobRef = doc(db, `companies/${companyId}/jobs`, job.id);
+          const updates = isDispatchView
+            ? {
+                stops: orderedStops,
+                destinations: orderedStops.map(s => s.address),
+                waypointOrder: normalized.waypointOrder || [],
+                updatedAt: serverTimestamp(),
+              }
+            : {
+                stops: orderedStops,
+                updatedAt: serverTimestamp(),
+              };
+          updateDoc(jobRef, updates).catch(err => console.warn('Could not persist stop sequence:', err));
+        }
+      }
     }).catch(e => {
+      if (cancelled) return;
       console.error("Directions request failed", e);
-      clearRoutePolylines();
       const errMsg = e?.message || "";
       let toastMsg = `Could not find a route: ${errMsg || "Check addresses"}`;
       if (errMsg.includes("REQUEST_DENIED") || errMsg.includes("not allowed")) {
-        toastMsg = "Directions request denied: Ensure Billing and Directions API are enabled in Google Cloud Console, and check domain restrictions.";
+        toastMsg = "Directions request denied: Ensure Billing and Routes/Directions APIs are enabled in Google Cloud Console, and check domain restrictions.";
       }
-      import('../store/useToastStore').then(({ useToastStore }) => {
-        useToastStore.getState().addToast(toastMsg, "error");
-      });
+      useToastStore.getState().addToast(toastMsg, "error");
       directionsRenderer.setMap(null);
+      clearCustomMarkers();
     });
 
-  }, [selectedJobId, jobs, directionsService, directionsRenderer, colors, map, processDirectionsResponse]);
+    return () => {
+      cancelled = true;
+    };
 
-  // 3. Live Detour / Off-Route Recalculation Monitor
+  }, [selectedJobId, jobs, routesLibrary, directionsService, directionsRenderer, colors, map, companyId, currentUser?.id, isDispatchView, applyNormalizedRoute, clearCustomMarkers, renderCustomStopMarkers]);
+
+  // 3. Live Detour / Off-Route Recalculation Monitor (skips already-completed stops)
   useEffect(() => {
-    if (!geometryLibrary || !directionsService || !directionsRenderer || !selectedJobId || !currentLocation) return;
+    if (!geometryLibrary || !routesLibrary || !directionsRenderer || !selectedJobId || !currentLocation) return;
     const job = jobs.find(j => j.id === selectedJobId);
     if (!job || job.status !== 'in-progress') return;
 
@@ -261,15 +309,17 @@ export function useDirections({ map, selectedJobId, jobs }) {
 
     try {
       const currentPoint = new window.google.maps.LatLng(currentLocation.lat, currentLocation.lng);
-      const poly = new window.google.maps.Polyline({ path: currentRouteInfo.overviewPath });
-      
-      // 0.0016 degrees tolerance (~175 meters)
-      const isNearPath = geometryLibrary.poly.isLocationOnEdge(currentPoint, poly, 0.0016);
+      if (!offRoutePolyRef.current) {
+        offRoutePolyRef.current = new window.google.maps.Polyline({ path: currentRouteInfo.overviewPath });
+      } else {
+        offRoutePolyRef.current.setPath(currentRouteInfo.overviewPath);
+      }
+
+      const isNearPath = geometryLibrary.poly.isLocationOnEdge(currentPoint, offRoutePolyRef.current, 0.0016);
 
       if (!isNearPath) {
         consecutiveOffRouteRef.current += 1;
-        
-        // After 3 consecutive GPS ticks off-path, trigger detour recalculation
+
         if (consecutiveOffRouteRef.current === 3) {
           const lastLoc = lastRecalcLocationRef.current;
           const movedSignificantly = !lastLoc || (
@@ -278,35 +328,39 @@ export function useDirections({ map, selectedJobId, jobs }) {
           );
 
           if (movedSignificantly) {
+            const allStops = normalizeJobStops(job);
+            const remaining = getRemainingStops(allStops);
+            if (remaining.length === 0) return;
+
             lastRecalcLocationRef.current = { ...currentLocation };
-            
-            import('../store/useToastStore').then(({ useToastStore }) => {
-              useToastStore.getState().addToast("Detour detected: updating route from current position...", "info");
-            });
+            useToastStore.getState().addToast("Detour detected: updating route from current position...", "info");
 
-            const dests = job.destinations || (job.destination ? [job.destination] : []);
-            if (dests.length > 0) {
-              let waypoints = [];
-              let finalDest = dests[0];
-              if (dests.length > 1) {
-                waypoints = dests.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
-                finalDest = dests[dests.length - 1];
+            const waypoints = remaining.length > 1
+              ? remaining.slice(0, -1).map(s => ({ location: s.address, stopover: true }))
+              : [];
+            const finalDest = remaining[remaining.length - 1].address;
+            const hasCompletedSome = remaining.length < allStops.length;
+
+            computeFleetRoute({
+              routesLibrary,
+              directionsService,
+              origin: currentPoint,
+              destination: finalDest,
+              waypoints,
+              optimizeWaypoints: !hasCompletedSome && waypoints.length > 0 ? job.optimizeRoute !== false : false,
+            }).then((normalized) => {
+              if (normalized.source === 'routes_v2') {
+                directionsRenderer.setMap(null);
+                renderCustomStopMarkers(map, normalized, currentPoint);
+              } else {
+                clearCustomMarkers();
+                directionsRenderer.setMap(map);
+                directionsRenderer.setDirections(normalized.rawDirectionsResponse);
               }
-
-              directionsService.route({
-                origin: currentPoint,
-                destination: finalDest,
-                waypoints: waypoints,
-                optimizeWaypoints: waypoints.length > 0 ? job.optimizeRoute !== false : false,
-                travelMode: 'DRIVING',
-                drivingOptions: { departureTime: new Date() }
-              }).then(response => {
-                directionsRenderer.setDirections(response);
-                processDirectionsResponse(response, job, job.routeColor || colors[0], true);
-              }).catch(err => {
-                console.warn("Detour recalculation failed:", err);
-              });
-            }
+              applyNormalizedRoute(normalized, job, job.routeColor || colors[0], true, allStops);
+            }).catch(err => {
+              console.warn("Detour recalculation failed:", err);
+            });
           }
         }
       } else {
@@ -315,7 +369,7 @@ export function useDirections({ map, selectedJobId, jobs }) {
     } catch (err) {
       console.warn("Off-route calculation error:", err);
     }
-  }, [currentLocation, geometryLibrary, directionsService, directionsRenderer, selectedJobId, jobs, colors, processDirectionsResponse]);
+  }, [currentLocation, geometryLibrary, routesLibrary, directionsService, directionsRenderer, map, selectedJobId, jobs, colors, applyNormalizedRoute, clearCustomMarkers, renderCustomStopMarkers]);
 
   return { directionsService, directionsRenderer };
 }

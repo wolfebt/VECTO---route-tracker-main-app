@@ -105,8 +105,11 @@ export default function DevelopmentModal() {
                 value={geminiInput}
                 onChange={e => setGeminiInput(e.target.value)}
                 className="glass-input"
-                placeholder="Leave blank to use system default"
+                placeholder="Optional local dev fallback key"
               />
+              <p className="text-xs text-gray-500 mt-2">
+                Production receipt OCR runs securely through Cloud Functions; use this field only as an optional local dev override before deploying Functions.
+              </p>
             </div>
             
             <div className="flex justify-end space-x-3 pt-6 border-t border-white/10">

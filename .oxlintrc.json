@@ -1,7 +1,31 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "oxc"],
+  "ignorePatterns": ["dist/**", "android/**", "ios/**", "functions/node_modules/**"],
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "overrides": [
+    {
+      "files": ["functions/**/*.js"],
+      "env": {
+        "node": true
+      }
+    },
+    {
+      "files": ["src/__tests__/**/*.js", "vite.config.js"],
+      "env": {
+        "node": true
+      }
+    }
+  ],
+  "globals": {
+    "google": "readonly"
+  },
   "rules": {
+    "no-undef": "error",
+    "no-unused-vars": "warn",
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
   }

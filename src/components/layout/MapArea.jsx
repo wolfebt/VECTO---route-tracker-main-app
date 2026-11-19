@@ -1,32 +1,13 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Map, useMap, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-google-maps';
 import { useAppStore } from '../../store/useAppStore';
-import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
+import { useToastStore } from '../../store/useToastStore';
+import { useJobs, useActiveDrivers, useVehicles } from '../../hooks/useFirebase';
 import { useDirections } from '../../hooks/useDirections';
+import { toMillisSafe } from '../../utils/formatters';
+import { clusterDriverMarkers } from '../../utils/mapCluster';
+import { normalizeJobStops } from '../../utils/stops';
 import RouteOutlineOverlay from './RouteOutlineOverlay';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebase';
-
-const mapStyles = [
-    { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
-    { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
-    { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
-    { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
-    { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
-    { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#263c3f' }] },
-    { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#6b9a76' }] },
-    { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
-    { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
-    { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9ca5b3' }] },
-    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#746855' }] },
-    { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1f2835' }] },
-    { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#f3d19c' }] },
-    { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#2f3948' }] },
-    { featureType: 'transit.station', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
-    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
-    { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#515c6d' }] },
-    { featureType: 'water', elementType: 'labels.text.stroke', stylers: [{ color: '#17263c' }] }
-];
 
 function DirectionsComponent() {
   const map = useMap();
@@ -38,49 +19,102 @@ function DirectionsComponent() {
   return null;
 }
 
+function HeadingArrowBadge({ heading, color = '#38bdf8' }) {
+  if (typeof heading !== 'number' || !Number.isFinite(heading)) return null;
+  return (
+    <div
+      className="w-5 h-5 rounded-full bg-slate-950/90 border border-white/40 shadow-md flex items-center justify-center mb-0.5"
+      title={`Heading ${Math.round(heading)}°`}
+    >
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 24 24"
+        fill={color}
+        style={{ transform: `rotate(${heading}deg)` }}
+        aria-hidden="true"
+      >
+        <path d="M12 2L19 20L12 16L5 20L12 2Z" />
+      </svg>
+    </div>
+  );
+}
+
 function DriverMarkers() {
   const drivers = useActiveDrivers();
   const jobs = useJobs();
-  const isDispatchView = useAppStore(state => state.isDispatchView);
+  const vehicles = useVehicles();
   const currentUser = useAppStore(state => state.currentUser);
-  const companyId = useAppStore(state => state.companyId);
+  const showNameplates = useAppStore(state => state.showNameplates);
   const [selectedDriverId, setSelectedDriverId] = useState(null);
-  const [showNameplates, setShowNameplates] = useState(true);
+  const [zoom, setZoom] = useState(12);
   const map = useMap();
 
   useEffect(() => {
     if (!map) return;
-    const listener = map.addListener('click', () => {
+    const initialZoom = map.getZoom();
+    if (typeof initialZoom === 'number') setZoom(initialZoom);
+
+    const clickListener = map.addListener('click', () => {
       setSelectedDriverId(null);
     });
-    return () => google.maps.event.removeListener(listener);
+    const zoomListener = map.addListener('zoom_changed', () => {
+      const z = map.getZoom();
+      if (typeof z === 'number') setZoom(z);
+    });
+    return () => {
+      google.maps.event.removeListener(clickListener);
+      google.maps.event.removeListener(zoomListener);
+    };
   }, [map]);
-
-  useEffect(() => {
-     if (!companyId || !currentUser) return;
-     const unsub = onSnapshot(doc(db, 'companies', companyId), (snap) => {
-         if (snap.exists()) {
-             setShowNameplates(snap.data().showNameplates !== false);
-         }
-     }, (error) => {
-         console.warn("Company document snapshot error:", error);
-     });
-     return () => unsub();
-  }, [companyId, currentUser]);
 
   const visibleDrivers = useMemo(() => {
     const fiveMinAgo = Date.now() - (5 * 60 * 1000);
     return drivers.filter(d => {
         if (d.id === currentUser?.id) return false;
+        if (!d.location || typeof d.location.latitude !== 'number' || typeof d.location.longitude !== 'number') return false;
         if (!d.timestamp) return true;
-        if (typeof d.timestamp.toMillis !== 'function') return true;
-        return d.timestamp.toMillis() > fiveMinAgo;
+        const tsMs = toMillisSafe(d.timestamp);
+        if (!tsMs) return true;
+        return tsMs > fiveMinAgo;
     });
   }, [drivers, currentUser?.id]);
 
+  const clusteredItems = useMemo(() => {
+    return clusterDriverMarkers(visibleDrivers, zoom);
+  }, [visibleDrivers, zoom]);
+
+  const handleClusterClick = (clusterDrivers) => {
+    if (!map || !window.google?.maps || !clusterDrivers?.length) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    clusterDrivers.forEach((d) => {
+      bounds.extend({ lat: d.location.latitude, lng: d.location.longitude });
+    });
+    map.fitBounds(bounds, 72);
+  };
+
   return (
     <>
-      {visibleDrivers.map(driver => {
+      {clusteredItems.map(item => {
+        if (item.type === 'cluster') {
+          return (
+            <AdvancedMarker
+              key={item.id}
+              position={item.position}
+              onClick={() => handleClusterClick(item.drivers)}
+              zIndex={950}
+              title={`${item.drivers.length} active drivers (click to zoom)`}
+              className="cursor-pointer"
+            >
+              <div className="px-2.5 py-1.5 rounded-full bg-sky-600/95 hover:bg-sky-500 text-white font-extrabold text-xs shadow-xl border-2 border-white/80 flex items-center gap-1.5 transition-transform hover:scale-110">
+                <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
+                <span>{item.drivers.length} Drivers</span>
+              </div>
+            </AdvancedMarker>
+          );
+        }
+
+        const driver = item.driver;
         let statusText = driver.status || 'Available';
         let pinColor = driver.color || '#22c55e';
         let glyphColor = '#ffffff';
@@ -101,6 +135,10 @@ function DriverMarkers() {
         }
 
         const isSelected = selectedDriverId === driver.id;
+        const speedMph = typeof driver.speed === 'number' && Number.isFinite(driver.speed) ? driver.speed : null;
+        const assignedVehicle =
+          vehicles.find((v) => v.id === assignedJob?.vehicleId) ||
+          vehicles.find((v) => v.assignedDriverId === driver.id && v.status !== 'out_of_service');
 
         return (
           <React.Fragment key={driver.id}>
@@ -112,10 +150,18 @@ function DriverMarkers() {
                 title={`${driver.name || 'Unnamed'} - ${statusText}`}
              >
                 <div className="flex flex-col items-center hover:scale-110 transition-transform origin-bottom relative">
+                    <HeadingArrowBadge heading={driver.heading} color={pinColor} />
                     <Pin background={pinColor} borderColor={borderColor} glyphColor={glyphColor} scale={1.2} />
                     {showNameplates && (
                         <div className="absolute top-full mt-0.5 px-1.5 py-0.5 bg-gray-900/90 backdrop-blur-sm rounded text-[10px] text-gray-200 font-bold shadow-lg border border-gray-700/50 whitespace-nowrap z-10 pointer-events-none">
-                           {driver.name || 'Unnamed'} <span className="text-gray-400 font-normal">({statusText.startsWith('On Trip') ? 'Driving' : statusText})</span>
+                           {driver.name || 'Unnamed'}{' '}
+                           {assignedVehicle?.unitNumber && (
+                             <span className="text-sky-300 font-mono">[{assignedVehicle.unitNumber}] </span>
+                           )}
+                           <span className="text-gray-400 font-normal">
+                             ({statusText.startsWith('On Trip') ? 'Driving' : statusText}
+                             {speedMph !== null && speedMph > 1 ? ` • ${Math.round(speedMph)} mph` : ''})
+                           </span>
                         </div>
                     )}
                 </div>
@@ -133,6 +179,18 @@ function DriverMarkers() {
                   >
                      <strong className="block mb-1 font-bold">{driver.name || 'Unnamed'}</strong>
                      <p className="text-xs mb-1 text-gray-700">{statusText}</p>
+                     {assignedVehicle && (
+                       <p className="text-[11px] font-semibold text-sky-700 mb-1">
+                         🚚 Unit {assignedVehicle.unitNumber}
+                         {assignedVehicle.makeModel ? ` • ${assignedVehicle.makeModel}` : ''}
+                       </p>
+                     )}
+                     {speedMph !== null && (
+                       <p className="text-[11px] text-gray-600 font-mono mb-1">
+                         Speed: {Math.round(speedMph)} mph
+                         {typeof driver.heading === 'number' ? ` • Hdg ${Math.round(driver.heading)}°` : ''}
+                       </p>
+                     )}
                      {(driver.phone || driver.number) && (
                         <p className="text-xs font-mono text-blue-700 mb-1 font-semibold">📞 {driver.phone || driver.number}</p>
                      )}
@@ -147,13 +205,90 @@ function DriverMarkers() {
   );
 }
 
+function FleetActiveRoutesOverlay() {
+  const map = useMap();
+  const isDispatchView = useAppStore(state => state.isDispatchView);
+  const showAllActiveRoutes = useAppStore(state => state.showAllActiveRoutes);
+  const selectedJobId = useAppStore(state => state.selectedJobId);
+  const setSelectedJobId = useAppStore(state => state.setSelectedJobId);
+  const colors = useAppStore(state => state.colors);
+  const jobs = useJobs();
+  const activeDrivers = useActiveDrivers();
+  const polylinesRef = useRef([]);
+
+  useEffect(() => {
+    polylinesRef.current.forEach((p) => p.setMap(null));
+    polylinesRef.current = [];
+
+    if (!map || !isDispatchView || !showAllActiveRoutes || !window.google?.maps) return;
+
+    const activeJobs = jobs.filter(
+      (j) =>
+        !j.archived &&
+        j.id !== selectedJobId &&
+        (j.status === 'in-progress' || j.status === 'assigned')
+    );
+
+    const created = [];
+    activeJobs.forEach((job) => {
+      const stopPts = normalizeJobStops(job)
+        .filter((s) => typeof s.lat === 'number' && typeof s.lng === 'number')
+        .map((s) => ({ lat: s.lat, lng: s.lng }));
+
+      const pathPts = [...stopPts];
+      if (job.status === 'in-progress' && Array.isArray(job.assignedDrivers)) {
+        const assignedDrv = job.assignedDrivers
+          .map((d) => activeDrivers.find((ad) => ad.id === d.id))
+          .find((ad) => typeof ad?.location?.latitude === 'number' && typeof ad?.location?.longitude === 'number');
+        if (assignedDrv) {
+          pathPts.unshift({ lat: assignedDrv.location.latitude, lng: assignedDrv.location.longitude });
+        }
+      }
+
+      if (pathPts.length < 2) return;
+
+      let hash = 0;
+      for (let i = 0; i < job.id.length; i++) {
+        hash = job.id.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const color = job.routeColor || colors[Math.abs(hash) % colors.length];
+
+      const line = new window.google.maps.Polyline({
+        map,
+        path: pathPts,
+        strokeColor: color,
+        strokeOpacity: 0.72,
+        strokeWeight: 4,
+        zIndex: 1,
+        clickable: true,
+      });
+      line.addListener('click', () => {
+        setSelectedJobId(job.id);
+      });
+      created.push(line);
+    });
+
+    polylinesRef.current = created;
+
+    return () => {
+      polylinesRef.current.forEach((p) => p.setMap(null));
+      polylinesRef.current = [];
+    };
+  }, [map, isDispatchView, showAllActiveRoutes, selectedJobId, jobs, activeDrivers, colors, setSelectedJobId]);
+
+  return null;
+}
+
 function MapController() {
   const map = useMap();
   useEffect(() => {
     if (!map) return;
-    
-    // Initial centering
-    if (navigator.geolocation) {
+
+    const existingLoc = useAppStore.getState().currentLocation;
+    if (existingLoc?.lat && existingLoc?.lng) {
+      map.setCenter({ lat: existingLoc.lat, lng: existingLoc.lng });
+      map.setZoom(15);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((pos) => {
         map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         map.setZoom(15);
@@ -162,69 +297,103 @@ function MapController() {
       }, { enableHighAccuracy: true, maximumAge: 0 });
     }
 
-    // Listen for manual recenter events from the button
     const handleRecenter = (e) => {
       map.setCenter({ lat: e.detail.lat, lng: e.detail.lng });
       map.setZoom(15);
     };
+
+    const handleFitFleet = () => {
+      if (!window.google?.maps) return;
+      const state = useAppStore.getState();
+      const bounds = new window.google.maps.LatLngBounds();
+      let count = 0;
+
+      const fiveMinAgo = Date.now() - (5 * 60 * 1000);
+      (state.activeDrivers || []).forEach((d) => {
+        if (typeof d.location?.latitude !== 'number' || typeof d.location?.longitude !== 'number') return;
+        const tsMs = toMillisSafe(d.timestamp);
+        if (d.timestamp && tsMs && tsMs < fiveMinAgo) return;
+        bounds.extend({ lat: d.location.latitude, lng: d.location.longitude });
+        count += 1;
+      });
+
+      if (typeof state.currentLocation?.lat === 'number' && typeof state.currentLocation?.lng === 'number') {
+        bounds.extend({ lat: state.currentLocation.lat, lng: state.currentLocation.lng });
+        count += 1;
+      }
+
+      if (Array.isArray(state.routeInfo?.overviewPath)) {
+        state.routeInfo.overviewPath.forEach((pt) => {
+          const lat = typeof pt.lat === 'function' ? pt.lat() : pt.lat;
+          const lng = typeof pt.lng === 'function' ? pt.lng() : pt.lng;
+          if (typeof lat === 'number' && typeof lng === 'number') {
+            bounds.extend({ lat, lng });
+            count += 1;
+          }
+        });
+      }
+
+      if (count === 0) {
+        useToastStore.getState().addToast("No active fleet locations available to fit.", "info");
+        return;
+      }
+      if (count === 1) {
+        map.setCenter(bounds.getCenter());
+        map.setZoom(15);
+        return;
+      }
+      map.fitBounds(bounds, 64);
+    };
+
+    const handleFitRoute = () => {
+      if (!window.google?.maps) return;
+      const path = useAppStore.getState().routeInfo?.overviewPath;
+      if (!Array.isArray(path) || path.length < 2) return;
+      const bounds = new window.google.maps.LatLngBounds();
+      path.forEach((pt) => {
+        const lat = typeof pt.lat === 'function' ? pt.lat() : pt.lat;
+        const lng = typeof pt.lng === 'function' ? pt.lng() : pt.lng;
+        if (typeof lat === 'number' && typeof lng === 'number') {
+          bounds.extend({ lat, lng });
+        }
+      });
+      map.fitBounds(bounds, 56);
+    };
+
     window.addEventListener('recenter-map', handleRecenter);
+    window.addEventListener('fit-fleet-bounds', handleFitFleet);
+    window.addEventListener('fit-route-bounds', handleFitRoute);
     
     return () => {
       window.removeEventListener('recenter-map', handleRecenter);
+      window.removeEventListener('fit-fleet-bounds', handleFitFleet);
+      window.removeEventListener('fit-route-bounds', handleFitRoute);
     };
   }, [map]);
   return null;
 }
 
 function MyLocationMarker() {
-  const [localLocation, setLocalLocation] = useState(null);
   const currentUser = useAppStore(state => state.currentUser);
   const isDispatchView = useAppStore(state => state.isDispatchView);
+  const isSharingLocation = useAppStore(state => state.isSharingLocation);
   const storeLocation = useAppStore(state => state.currentLocation);
-  const setCurrentLocation = useAppStore(state => state.setCurrentLocation);
   const drivers = useActiveDrivers();
-  
-  useEffect(() => {
-    if (isDispatchView || !navigator.geolocation) return;
-    
-    // Get initial fix
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setLocalLocation(loc);
-        setCurrentLocation(loc);
-      },
-      () => {},
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
-    );
-    
-    // Watch continuous location
-    const watchId = navigator.geolocation.watchPosition(
-      pos => {
-        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setLocalLocation(loc);
-        setCurrentLocation(loc);
-      },
-      (err) => console.warn("MyLocationMarker signal issue:", err),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
-    );
-    
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [isDispatchView, setCurrentLocation]);
 
-  if (!currentUser || isDispatchView) return null;
+  if (!currentUser || isDispatchView || !isSharingLocation) return null;
 
-  // Multi-level fallback to ensure tracking pin is never lost:
-  // 1. Store live location (from GPS or Capacitor native plugin)
-  // 2. Local browser GPS location
-  // 3. Firestore active_drivers record for currentUser
-  let location = storeLocation || localLocation;
+  const myDriverDoc = drivers.find(d => d.id === currentUser.id);
+  let location = storeLocation ? { lat: storeLocation.lat, lng: storeLocation.lng } : null;
+  let heading = typeof storeLocation?.heading === 'number' ? storeLocation.heading : null;
+  let speed = typeof storeLocation?.speed === 'number' ? storeLocation.speed : null;
+
   if (!location && currentUser) {
-    const myDriverDoc = drivers.find(d => d.id === currentUser.id);
-    if (myDriverDoc?.location?.latitude && myDriverDoc?.location?.longitude) {
+    if (typeof myDriverDoc?.location?.latitude === 'number' && typeof myDriverDoc?.location?.longitude === 'number') {
       location = { lat: myDriverDoc.location.latitude, lng: myDriverDoc.location.longitude };
     }
   }
+  if (heading === null && typeof myDriverDoc?.heading === 'number') heading = myDriverDoc.heading;
+  if (speed === null && typeof myDriverDoc?.speed === 'number') speed = myDriverDoc.speed;
 
   if (!location) return null;
 
@@ -237,9 +406,10 @@ function MyLocationMarker() {
        title="My Location"
     >
        <div className="flex flex-col items-center hover:scale-110 transition-transform origin-bottom relative">
+           <HeadingArrowBadge heading={heading} color={pinColor} />
            <Pin background={pinColor} borderColor="#166534" glyphColor="#ffffff" scale={1.2} />
            <div className="absolute top-full mt-0.5 px-1.5 py-0.5 bg-gray-900/90 backdrop-blur-sm rounded text-[10px] text-gray-200 font-bold shadow-lg border border-gray-700/50 whitespace-nowrap z-10 pointer-events-none">
-              Me
+              Me{speed !== null && speed > 1 ? ` • ${Math.round(speed)} mph` : ''}
            </div>
        </div>
     </AdvancedMarker>
@@ -261,7 +431,7 @@ function TrafficOverlay() {
 
 export default function MapArea() {
   const apiKey = useAppStore(state => state.mapsApiKey) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-  const setMobileView = useAppStore(state => state.setMobileView);
+  const openModal = useAppStore(state => state.openModal);
 
   const routeInfo = useAppStore(state => state.routeInfo);
   const routeStyle = useAppStore(state => state.routeStyle);
@@ -272,8 +442,14 @@ export default function MapArea() {
       <div className="absolute inset-0 flex items-center justify-center bg-gray-800 text-center p-4">
         <div>
           <p className="text-red-400 font-bold mb-2">Map Authentication Failed</p>
-          <p className="text-gray-400 text-sm mb-4">Your API key is missing or invalid.</p>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Settings</button>
+          <p className="text-gray-400 text-sm mb-4">Your Google Maps API key is missing or invalid.</p>
+          <button
+            type="button"
+            onClick={() => openModal('development')}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+          >
+            Developer Settings
+          </button>
         </div>
       </div>
     );
@@ -291,6 +467,7 @@ export default function MapArea() {
       >
         <MapController />
         <TrafficOverlay />
+        <FleetActiveRoutesOverlay />
         <DirectionsComponent />
         {routeInfo?.overviewPath && (
           <RouteOutlineOverlay
@@ -298,7 +475,6 @@ export default function MapArea() {
             stepTraffics={routeInfo.stepTraffics}
             routeColor={routeInfo.routeColor}
             routeStyle={routeStyle}
-            jobId={routeInfo.jobId}
             driverLocation={currentLocation}
           />
         )}
@@ -306,35 +482,59 @@ export default function MapArea() {
         <MyLocationMarker />
       </Map>
       
-      {/* My Location Button */}
-      <button 
-        type="button"
-        aria-label="My Location"
-        onClick={() => {
-          if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((pos) => {
-              window.dispatchEvent(new CustomEvent('recenter-map', {
-                detail: { lat: pos.coords.latitude, lng: pos.coords.longitude }
-              }));
-            }, (err) => {
-              console.warn(err);
-              import('../../store/useToastStore').then(({ useToastStore }) => {
-                 useToastStore.getState().addToast("Could not get your location. Please check browser permissions.", "error");
-              });
-            }, { enableHighAccuracy: true, maximumAge: 0 });
-          } else {
-            import('../../store/useToastStore').then(({ useToastStore }) => {
-                 useToastStore.getState().addToast("Geolocation is not supported by your browser.", "error");
-            });
-          }
-        }}
-        className="absolute bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg z-10 flex items-center justify-center transition-colors"
-        title="My Location"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
-        </svg>
-      </button>
+      {/* Floating Map Controls Bar */}
+      <div className="absolute bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-full border border-white/15 shadow-2xl">
+        <button 
+          type="button"
+          aria-label="My Location"
+          onClick={() => {
+            if (currentLocation?.lat && currentLocation?.lng) {
+              window.dispatchEvent(new CustomEvent('recenter-map', { detail: { lat: currentLocation.lat, lng: currentLocation.lng } }));
+            }
+            if (navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition((pos) => {
+                window.dispatchEvent(new CustomEvent('recenter-map', {
+                  detail: { lat: pos.coords.latitude, lng: pos.coords.longitude }
+                }));
+              }, (err) => {
+                console.warn(err);
+                if (!currentLocation) {
+                  useToastStore.getState().addToast("Could not get your location. Please check browser permissions.", "error");
+                }
+              }, { enableHighAccuracy: true, maximumAge: 0 });
+            } else if (!currentLocation) {
+              useToastStore.getState().addToast("Geolocation is not supported by your browser.", "error");
+            }
+          }}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-full shadow flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer"
+          title="Recenter on My Location"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+          </svg>
+          <span className="hidden sm:inline">My Location</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('fit-fleet-bounds'))}
+          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-full border border-white/10 text-xs font-bold transition-colors cursor-pointer"
+          title="Zoom map to fit all active drivers"
+        >
+          Fit Fleet
+        </button>
+
+        {routeInfo?.overviewPath?.length >= 2 && (
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('fit-route-bounds'))}
+            className="bg-teal-600/90 hover:bg-teal-500 text-white px-3 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer"
+            title="Zoom map to fit selected route"
+          >
+            Fit Route
+          </button>
+        )}
+      </div>
     </>
   );
 }

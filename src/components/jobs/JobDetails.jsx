@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
-import { useJobs, useActiveDrivers } from '../../hooks/useFirebase';
+import { useJobs, useActiveDrivers, useCompany } from '../../hooks/useFirebase';
 import { db, storage } from '../../firebase';
 import { doc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp, query, onSnapshot, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { normalizeJobStops, getRemainingStops, evaluateStopSla } from '../../utils/stops';
+import { getPublicAppBaseUrl, toMillisSafe } from '../../utils/formatters';
+import { syncPublicTrackingJobUpdate } from '../../utils/publicTracking';
 import { 
   Briefcase, 
   ShieldAlert, 
@@ -15,29 +18,53 @@ import {
   QrCode, 
   CheckCircle2, 
   Pencil, 
-  Clock, 
   Slash, 
   Archive, 
   Trash2, 
   MessageSquare,
   MessageSquarePlus,
-  Share2
+  Share2,
+  Phone,
+  Play,
+  Flag,
+  Calendar,
+  AlertTriangle,
+  DollarSign,
+  ClipboardCheck,
+  Radio,
+  ExternalLink,
+  Truck
 } from 'lucide-react';
 
-export default function JobDetails({ onClose }) {
-  const { selectedJobId, setSelectedJobId, isDispatchView, currentUser, companyId, routeInfo, routeStyle, setRouteStyle, openModal } = useAppStore();
+export default function JobDetails() {
+  const {
+    selectedJobId,
+    setSelectedJobId,
+    isDispatchView,
+    memberPermissions,
+    currentUser,
+    companyId,
+    companyName,
+    currentLocation,
+    routeInfo,
+    routeWeather,
+    routeStyle,
+    setRouteStyle,
+    openModal
+  } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
   const jobs = useJobs();
   const activeDrivers = useActiveDrivers();
+  const { members } = useCompany();
   const job = jobs.find(j => j.id === selectedJobId);
   
   const [messages, setMessages] = useState([]);
+  const [notes, setNotes] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatFile, setChatFile] = useState(null);
   const [sending, setSending] = useState(false);
   const [activeDrawer, setActiveDrawer] = useState('JOB');
   
-  // Reset ADMIN drawer if user is in driver view
   useEffect(() => {
     if (!isDispatchView && activeDrawer === 'ADMIN') {
       setActiveDrawer('JOB');
@@ -54,7 +81,7 @@ export default function JobDetails({ onClose }) {
     const unsub = onSnapshot(q, (snap) => {
       const msgs = [];
       snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
-      msgs.sort((a,b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+      msgs.sort((a,b) => toMillisSafe(a.timestamp) - toMillisSafe(b.timestamp));
       setMessages(msgs);
     }, (error) => {
       if (error.code !== 'permission-denied') {
@@ -64,11 +91,52 @@ export default function JobDetails({ onClose }) {
     return unsub;
   }, [selectedJobId, companyId, currentUser?.id]);
 
+  // Progress notes listener
+  useEffect(() => {
+    if (!selectedJobId || !companyId || !currentUser?.id) {
+      setNotes([]);
+      return;
+    }
+    const q = query(collection(db, `companies/${companyId}/jobs/${selectedJobId}/notes`));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => toMillisSafe(b.timestamp) - toMillisSafe(a.timestamp));
+      setNotes(list);
+    }, (error) => {
+      if (error.code !== 'permission-denied') {
+        console.warn("Job notes snapshot listener error:", error);
+      }
+    });
+    return unsub;
+  }, [selectedJobId, companyId, currentUser?.id]);
+
+  // Mark chat messages read when CHAT drawer is active
+  useEffect(() => {
+    if (activeDrawer !== 'CHAT' || !selectedJobId || !currentUser?.id || messages.length === 0) return;
+    const latestMsgMs = toMillisSafe(messages[messages.length - 1]?.timestamp);
+    const lastReadMs = toMillisSafe(currentUser?.lastRead?.[selectedJobId]);
+    if (latestMsgMs > 0 && latestMsgMs <= lastReadMs) return;
+
+    const nowMs = Date.now();
+    useAppStore.setState((state) => ({
+      currentUser: state.currentUser
+        ? {
+            ...state.currentUser,
+            lastRead: { ...(state.currentUser.lastRead || {}), [selectedJobId]: nowMs }
+          }
+        : null
+    }));
+
+    updateDoc(doc(db, 'users', currentUser.id), {
+      [`lastRead.${selectedJobId}`]: serverTimestamp()
+    }).catch(() => {});
+  }, [activeDrawer, selectedJobId, currentUser?.id, currentUser?.lastRead, messages]);
+
   if (!selectedJobId) return null;
   if (!job) {
-    // Job deleted or not found
     return (
-      <div className="absolute right-0 top-0 bottom-0 w-80 bg-gray-900 border-l border-gray-800 p-4 flex flex-col z-20 shadow-2xl">
+      <div className="relative md:absolute right-0 top-0 bottom-0 w-full h-full md:w-80 lg:w-96 bg-gray-900 border-l border-gray-800 p-4 flex flex-col z-30 shadow-2xl">
         <button onClick={() => setSelectedJobId(null)} className="text-gray-400 hover:text-white self-end mb-4">&times;</button>
         <p className="text-gray-400 italic">Job not found.</p>
       </div>
@@ -76,40 +144,104 @@ export default function JobDetails({ onClose }) {
   }
 
   const isAssigned = (job.assignedDrivers || []).some(d => d.id === currentUser.id);
-  const canAssign = job.status !== 'completed' && job.status !== 'archived';
+  const canAssign = job.status !== 'completed' && job.status !== 'archived' && job.status !== 'cancelled';
   const hasDriverFinished = (job.completedDrivers || []).includes(currentUser.id);
+  const canDeleteJob = Boolean(memberPermissions?.isCreator || memberPermissions?.canDeleteJob);
+
+  const stops = normalizeJobStops(job);
+  const remainingStops = getRemainingStops(stops);
+
+  const instructions = job.instructions?.length
+    ? job.instructions
+    : (job.note ? [{ id: 'legacy', text: job.note, target: 'all', isPriority: false }] : []);
+
+  const visibleInstructions = isDispatchView
+    ? instructions
+    : instructions.filter(inst => !inst.target || inst.target === 'all' || inst.target === currentUser.id);
+
+  const handleStopStatusChange = async (stopId, nextStatus) => {
+    try {
+      const now = Date.now();
+      const updatedStops = stops.map((s) => {
+        if (s.id !== stopId) return s;
+        if (nextStatus === 'arrived') {
+          return { ...s, status: 'arrived', arrivedAt: s.arrivedAt || now };
+        }
+        if (nextStatus === 'completed') {
+          return { ...s, status: 'completed', arrivedAt: s.arrivedAt || now, completedAt: now };
+        }
+        return { ...s, status: 'pending', arrivedAt: null, completedAt: null };
+      });
+      await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), {
+        stops: updatedStops,
+        updatedAt: serverTimestamp(),
+      });
+      await syncPublicTrackingJobUpdate({
+        db,
+        companyId,
+        companyName,
+        job: { ...job, stops: updatedStops },
+        driverLocation: currentLocation,
+        routeInfo
+      });
+    } catch (err) {
+      console.error(err);
+      addToast("Failed to update stop status", "error");
+    }
+  };
 
   const updateStatus = async (status, isAssigning = false, isUnassigning = false) => {
-    let updates = { status };
+    const updates = { status, updatedAt: serverTimestamp() };
     if (isAssigning) {
-        updates.assignedDrivers = arrayUnion({ id: currentUser.id, name: currentUser.name });
-        if (job.status === 'unassigned') updates.status = 'in-progress';
-        else updates.status = job.status;
+      updates.assignedDrivers = arrayUnion({ id: currentUser.id, name: currentUser.name });
+      updates.assignedDriverIds = arrayUnion(currentUser.id);
+      updates.status = job.status === 'unassigned' ? 'in-progress' : job.status;
     } else if (isUnassigning) {
-        const currentDrivers = job.assignedDrivers || [];
-        updates.assignedDrivers = currentDrivers.filter(d => d.id !== currentUser.id);
-        
-        const currentCompleted = job.completedDrivers || [];
-        if (currentCompleted.includes(currentUser.id)) {
-            updates.completedDrivers = currentCompleted.filter(id => id !== currentUser.id);
-        }
+      const currentDrivers = job.assignedDrivers || [];
+      updates.assignedDrivers = currentDrivers.filter(d => d.id !== currentUser.id);
+      updates.assignedDriverIds = updates.assignedDrivers.map(d => d.id);
 
-        if (updates.assignedDrivers.length === 0 && job.status !== 'completed') {
-            updates.status = 'unassigned';
-        } else {
-            updates.status = job.status;
-        }
+      const currentCompleted = job.completedDrivers || [];
+      if (currentCompleted.includes(currentUser.id)) {
+        updates.completedDrivers = currentCompleted.filter(id => id !== currentUser.id);
+      }
+
+      if (updates.assignedDrivers.length === 0 && job.status !== 'completed') {
+        updates.status = 'unassigned';
+      } else {
+        updates.status = job.status;
+      }
     }
-    
+
+    if (updates.status === 'in-progress' && !job.startedAt) {
+      updates.startedAt = serverTimestamp();
+    }
     if (status === 'archived') {
-        updates.archived = true;
-        updates.previousStatus = job.status;
-    } else {
-        updates.archived = false;
+      updates.archived = true;
+      updates.previousStatus = job.status;
+    } else if (isDispatchView && job.archived) {
+      updates.archived = false;
     }
-    if (status === 'completed') updates.completedAt = serverTimestamp();
+    if (updates.status === 'completed') updates.completedAt = serverTimestamp();
 
     await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), updates);
+
+    if (status === 'archived' || job.archived) {
+      useAppStore.getState().setArchivedJobsState({ archivedJobsLoadedOnce: false });
+    }
+
+    const syncedDrivers = isAssigning
+      ? [...(job.assignedDrivers || []), { id: currentUser.id, name: currentUser.name }]
+      : (isUnassigning ? updates.assignedDrivers : job.assignedDrivers);
+
+    await syncPublicTrackingJobUpdate({
+      db,
+      companyId,
+      companyName,
+      job: { ...job, status: updates.status, assignedDrivers: syncedDrivers },
+      driverLocation: currentLocation,
+      routeInfo
+    });
   };
 
   const handleDriverFinish = async () => {
@@ -119,41 +251,54 @@ export default function JobDetails({ onClose }) {
     const newCompleted = [...completedDrivers, currentUser.id];
     const assignedCount = job.assignedDrivers?.length || 1;
     
-    let updates = {
-        completedDrivers: arrayUnion(currentUser.id)
+    const updates = {
+      completedDrivers: arrayUnion(currentUser.id),
+      updatedAt: serverTimestamp()
     };
     
     if (newCompleted.length >= assignedCount) {
-        updates.status = 'completed';
-        updates.completedAt = serverTimestamp();
+      updates.status = 'completed';
+      updates.completedAt = serverTimestamp();
     }
     
     await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), updates);
+    await syncPublicTrackingJobUpdate({
+      db,
+      companyId,
+      companyName,
+      job: { ...job, status: updates.status || job.status, completedDrivers: newCompleted },
+      driverLocation: currentLocation,
+      routeInfo
+    });
   };
 
   const handleToggleDriver = async (driverId, isAdding) => {
-    const driver = activeDrivers.find(d => d.id === driverId);
-    let updates = {};
+    const member = members.find(m => m.id === driverId) || activeDrivers.find(d => d.id === driverId);
+    if (!member) return;
+    const updates = { updatedAt: serverTimestamp() };
     if (isAdding) {
-        updates.assignedDrivers = arrayUnion({ id: driver.id, name: driver.name });
-        if (job.status === 'unassigned') updates.status = 'in-progress';
+      updates.assignedDrivers = arrayUnion({ id: member.id, name: member.name || member.email || 'Driver' });
+      updates.assignedDriverIds = arrayUnion(member.id);
+      if (job.status === 'unassigned') updates.status = 'assigned';
     } else {
-        const currentDrivers = job.assignedDrivers || [];
-        updates.assignedDrivers = currentDrivers.filter(d => d.id !== driverId);
+      const currentDrivers = job.assignedDrivers || [];
+      updates.assignedDrivers = currentDrivers.filter(d => d.id !== driverId);
+      updates.assignedDriverIds = updates.assignedDrivers.map(d => d.id);
 
-        const currentCompleted = job.completedDrivers || [];
-        if (currentCompleted.includes(driverId)) {
-            updates.completedDrivers = currentCompleted.filter(id => id !== driverId);
-        }
+      const currentCompleted = job.completedDrivers || [];
+      if (currentCompleted.includes(driverId)) {
+        updates.completedDrivers = currentCompleted.filter(id => id !== driverId);
+      }
 
-        if (updates.assignedDrivers.length === 0 && job.status !== 'completed') {
-            updates.status = 'unassigned';
-        }
+      if (updates.assignedDrivers.length === 0 && job.status !== 'completed') {
+        updates.status = 'unassigned';
+      }
     }
     await updateDoc(doc(db, `companies/${companyId}/jobs`, job.id), updates);
   };
 
   const handleDelete = async () => {
+    if (!canDeleteJob) return;
     if (confirm("Permanently delete this job?")) {
       await deleteDoc(doc(db, `companies/${companyId}/jobs`, job.id));
       setSelectedJobId(null);
@@ -174,7 +319,7 @@ export default function JobDetails({ onClose }) {
     try {
       let attachmentUrl = null;
       if (chatFile) {
-        const storageRef = ref(storage, `chat_files/${companyId}/${job.id}/${Date.now()}_${chatFile.name}`);
+        const storageRef = ref(storage, `chat_files/${companyId}/${job.id}/${Date.now()}_${currentUser.id}_${chatFile.name}`);
         await uploadBytes(storageRef, chatFile);
         attachmentUrl = await getDownloadURL(storageRef);
       }
@@ -199,36 +344,19 @@ export default function JobDetails({ onClose }) {
     }
     setSending(false);
   };
+
   const getNavigateLink = () => {
-    const dests = job.destinations || (job.destination ? [job.destination] : []);
-    if (dests.length === 0) return '#';
+    const activeTargetStops = remainingStops.length > 0 ? remainingStops : stops;
+    if (activeTargetStops.length === 0) return '#';
     
-    const finalDest = dests[dests.length - 1];
+    const finalDest = activeTargetStops[activeTargetStops.length - 1].address;
     let link = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(finalDest)}`;
     
-    if (dests.length > 1) {
-      const waypoints = dests.slice(0, -1).map(d => encodeURIComponent(d)).join('|');
+    if (activeTargetStops.length > 1) {
+      const waypoints = activeTargetStops.slice(0, -1).map(s => encodeURIComponent(s.address)).join('|');
       link += `&waypoints=${waypoints}`;
     }
     return link;
-  };
-
-  const handleStartNavigation = (e) => {
-    const dests = job.destinations || (job.destination ? [job.destination] : []);
-    if (dests.length === 0) return;
-    const finalDest = dests[dests.length - 1];
-
-    // Android Auto direct intent check
-    const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
-    if (isAndroid && dests.length === 1) {
-      // Direct Turn-by-Turn Intent (optimally launches Android Auto projection)
-      window.location.href = `google.navigation:q=${encodeURIComponent(finalDest)}&mode=d`;
-      setTimeout(() => {
-        const fallback = getNavigateLink();
-        if (fallback !== '#') window.open(fallback, '_blank');
-      }, 700);
-      e.preventDefault();
-    }
   };
 
   const getStreetViewLink = () => {
@@ -237,7 +365,7 @@ export default function JobDetails({ onClose }) {
   };
 
   const handleShareJob = async () => {
-    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    const baseUrl = getPublicAppBaseUrl();
     const shareUrl = `${baseUrl}?company=${companyId || ''}&job=${selectedJobId}`;
 
     const shareData = {
@@ -267,17 +395,33 @@ export default function JobDetails({ onClose }) {
     }
   };
 
+  const fiveMinAgo = Date.now() - (5 * 60 * 1000);
+  const completedStopCount = stops.filter(s => s.status === 'completed').length;
+
   return (
     <div className="relative md:absolute right-0 top-0 bottom-0 w-full h-full max-w-full md:max-w-md md:w-80 lg:w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-30 shadow-2xl transition-transform duration-300">
       
       {/* Header */}
       <div className="p-4 border-b border-gray-800 flex justify-between items-start shrink-0">
         <div className="flex flex-col flex-1 mr-2">
-           <div className="flex items-center flex-wrap gap-x-3 gap-y-2">
+           <div className="flex items-center flex-wrap gap-x-2.5 gap-y-1.5">
                <h2 className="text-lg font-bold text-white leading-none">{job.jobName || 'Unnamed'}</h2>
                <span className="px-2 py-0.5 bg-gray-700 text-xs rounded-full inline-block leading-none">{job.status}</span>
+               {job.vehicleLabel && (
+                 <span className="px-2 py-0.5 bg-sky-900/50 text-sky-300 border border-sky-500/30 text-[11px] rounded-full inline-flex items-center gap-1 leading-none font-medium">
+                   <Truck size={11} /> {job.vehicleLabel}
+                 </span>
+               )}
+               {job.jobDate && (
+                 <span className="text-gray-400 text-[11px] font-mono flex items-center gap-1 leading-none">
+                   <Calendar size={11} /> {job.jobDate}
+                 </span>
+               )}
                {routeInfo && (
-                   <span className="text-teal-400 text-xs font-medium leading-none">Est: {routeInfo.duration} ({routeInfo.distance})</span>
+                   <span className="text-teal-400 text-xs font-medium leading-none">
+                     Est: {routeInfo.duration} ({routeInfo.distance})
+                     {routeInfo.totalDwellMinutes > 0 && ` (+${routeInfo.totalDwellMinutes}m dwell)`}
+                   </span>
                )}
            </div>
         </div>
@@ -285,7 +429,7 @@ export default function JobDetails({ onClose }) {
       </div>
 
       {/* Details */}
-      <div className="flex-1 p-4 border-b border-gray-800 overflow-y-auto text-sm space-y-2">
+      <div className="flex-1 p-4 border-b border-gray-800 overflow-y-auto text-sm space-y-2.5">
         <div className="flex justify-between items-start">
             <p className="text-gray-400"><strong className="text-gray-200">From:</strong> {job.origin}</p>
             {isDispatchView && (
@@ -300,11 +444,182 @@ export default function JobDetails({ onClose }) {
                 </div>
             )}
         </div>
-        <div className="text-gray-400"><strong className="text-gray-200">Destinations:</strong>
-            <ul className="list-decimal ml-5 mt-1 text-xs">
-                {(job.destinations || [job.destination]).map((d, i) => <li key={i}>{d}</li>)}
-            </ul>
+
+        {/* Structured Multi-Stop Progress */}
+        <div className="text-gray-400">
+          <div className="flex items-center justify-between mb-1">
+            <strong className="text-gray-200">Stops ({completedStopCount}/{stops.length}):</strong>
+            {stops.length > 1 && job.optimizeRoute !== false && (
+              <span className="text-[10px] text-teal-400 font-semibold">TSP Optimized</span>
+            )}
+          </div>
+          <ul className="space-y-1.5 text-xs">
+            {stops.map((stop, idx) => {
+              const isDone = stop.status === 'completed';
+              const isArrived = stop.status === 'arrived';
+              const canEditStops = (isAssigned || isDispatchView) && canAssign;
+
+              return (
+                <li
+                  key={stop.id || idx}
+                  className={`p-2 rounded-lg border flex items-start justify-between gap-2 ${
+                    isDone
+                      ? 'bg-emerald-950/25 border-emerald-500/30 text-gray-400'
+                      : isArrived
+                      ? 'bg-amber-950/25 border-amber-500/40 text-gray-200'
+                      : 'bg-gray-800/70 border-gray-700/70 text-gray-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-2 min-w-0">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                      isDone
+                        ? 'bg-emerald-500/30 text-emerald-300'
+                        : isArrived
+                        ? 'bg-amber-500/30 text-amber-300'
+                        : 'bg-slate-700 text-slate-300'
+                    }`}>
+                      {idx + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className={`leading-snug break-words ${isDone ? 'line-through text-gray-400' : 'text-gray-200'}`}>
+                        {stop.address}
+                      </p>
+                      {(stop.arriveBy || typeof stop.serviceMinutes === 'number') && (() => {
+                        const sla = evaluateStopSla(stop, job.jobDate || '');
+                        const slaBadgeClass =
+                          sla.status === 'on_time'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : sla.status === 'late'
+                              ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                              : sla.status === 'at_risk'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                : 'bg-sky-500/15 text-sky-300 border-sky-500/35';
+                        return (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px]">
+                            {sla.status !== 'none' && (
+                              <span className={`px-1.5 py-0.5 rounded border font-semibold ${slaBadgeClass}`}>
+                                {sla.label}
+                              </span>
+                            )}
+                            {typeof stop.serviceMinutes === 'number' && stop.serviceMinutes > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-700/80 text-slate-300 border border-slate-600/70 font-mono">
+                                {stop.serviceMinutes}m dwell
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {(isArrived || isDone) && (
+                        <span className={`text-[10px] font-semibold inline-block mt-0.5 ${isDone ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          {isDone
+                            ? `Done${stop.completedAt ? ` • ${new Date(stop.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}`
+                            : `Arrived${stop.arrivedAt ? ` • ${new Date(stop.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}`}
+                        </span>
+                      )}
+                      {stop.pod && (
+                        <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px]">
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold">
+                            ✓ POD Verified{stop.pod.recipientName ? ` • ${stop.pod.recipientName}` : ''}
+                          </span>
+                          {stop.pod.photoUrl && (
+                            <a
+                              href={stop.pod.photoUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sky-400 hover:underline inline-flex items-center gap-0.5"
+                            >
+                              Photo <ExternalLink size={9} />
+                            </a>
+                          )}
+                          {stop.pod.signatureUrl && (
+                            <a
+                              href={stop.pod.signatureUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sky-400 hover:underline inline-flex items-center gap-0.5"
+                            >
+                              Signature <ExternalLink size={9} />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {canEditStops && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!isArrived && !isDone && (
+                        <button
+                          type="button"
+                          onClick={() => handleStopStatusChange(stop.id, 'arrived')}
+                          className="px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 border border-amber-500/30 text-[10px] font-bold cursor-pointer"
+                        >
+                          Arrive
+                        </button>
+                      )}
+                      {!isDone ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openModal('podCapture', { jobId: job.id, stopId: stop.id })}
+                            className="px-2 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold cursor-pointer"
+                            title="Capture Proof of Delivery photo & signature"
+                          >
+                            POD
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStopStatusChange(stop.id, 'completed')}
+                            className="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold cursor-pointer"
+                          >
+                            Done
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleStopStatusChange(stop.id, 'pending')}
+                          className="px-2 py-1 rounded bg-slate-700/60 hover:bg-slate-600 text-slate-300 border border-slate-600 text-[10px] font-semibold cursor-pointer"
+                        >
+                          Undo
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
+
+        {/* Customer / Site Contact Card */}
+        {(job.contactName || job.contactNumber) && (
+          <div className="p-2.5 rounded-lg bg-slate-800/70 border border-slate-700/70 flex items-center justify-between gap-2 text-xs">
+            <div className="min-w-0">
+              <span className="text-[10px] uppercase tracking-wider text-gray-400 font-bold block">Site Contact</span>
+              <span className="text-gray-100 font-semibold truncate block">{job.contactName || 'Contact'}</span>
+              {job.contactNumber && (
+                <span className="text-sky-300 font-mono text-[11px]">{job.contactNumber}</span>
+              )}
+            </div>
+            {job.contactNumber && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <a
+                  href={`tel:${job.contactNumber}`}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1 transition-colors"
+                >
+                  <Phone size={12} /> Call
+                </a>
+                <a
+                  href={`sms:${job.contactNumber}`}
+                  className="px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/40 text-sky-300 border border-sky-500/40 font-bold flex items-center gap-1 transition-colors"
+                >
+                  <MessageSquare size={12} /> Text
+                </a>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Live Road Conditions & Traffic Status */}
         {routeInfo && (
@@ -329,7 +644,7 @@ export default function JobDetails({ onClose }) {
                 type="button"
                 onClick={() => setRouteStyle('alternating')}
                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${routeStyle === 'alternating' ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400/50' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                title="Alternating Fade (Smooth transition between color & transparent road view)"
+                title="Alternating Fade"
               >
                 Fade Road
               </button>
@@ -337,7 +652,7 @@ export default function JobDetails({ onClose }) {
                 type="button"
                 onClick={() => setRouteStyle('outlined')}
                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${routeStyle === 'outlined' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                title="Outline Path (Transparent center showing map road)"
+                title="Outline Path"
               >
                 Outline
               </button>
@@ -345,50 +660,146 @@ export default function JobDetails({ onClose }) {
                 type="button"
                 onClick={() => setRouteStyle('traffic')}
                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${routeStyle === 'traffic' ? 'bg-amber-600 text-white shadow-sm' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                title="Traffic Colors (Green, Orange, Red)"
+                title="Traffic Colors"
               >
                 Traffic
+              </button>
+              <button
+                type="button"
+                onClick={() => setRouteStyle('solid')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${routeStyle === 'solid' ? 'bg-purple-600 text-white shadow-sm' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                title="Solid Line"
+              >
+                Solid
               </button>
             </div>
           </div>
         )}
-        <div className="flex space-x-2 mt-2">
+
+        {/* Route Weather & Road Hazard Alerts */}
+        {routeWeather?.hazards?.length > 0 && (
+          <div
+            className={`p-2.5 rounded-lg border text-xs space-y-1.5 mt-2 ${
+              routeWeather.highestSeverity === 'critical'
+                ? 'bg-rose-950/50 border-rose-500/50 text-rose-200'
+                : 'bg-amber-950/40 border-amber-500/45 text-amber-200'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 font-bold uppercase tracking-wider text-[10px]">
+              <span className="flex items-center gap-1">
+                <AlertTriangle size={12} />
+                Route Road Hazards ({routeWeather.hazards.length})
+              </span>
+              {routeWeather.destinationWeather?.temp !== undefined && (
+                <span className="font-mono">
+                  Dest: {Math.round(routeWeather.destinationWeather.temp)}°F
+                </span>
+              )}
+            </div>
+            <ul className="space-y-1">
+              {routeWeather.hazards.map((hazard) => (
+                <li key={hazard.type} className="flex items-start justify-between gap-2 text-[11px] leading-snug">
+                  <span>
+                    <strong className="mr-1">{hazard.icon} {hazard.title}</strong>
+                    <span className="opacity-80">({hazard.segment})</span>
+                  </span>
+                  <span className="font-mono text-[10px] opacity-90 shrink-0">{hazard.detail}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-1.5 mt-2">
             {getNavigateLink() !== '#' && (
               <a 
                 href={getNavigateLink()} 
-                onClick={handleStartNavigation}
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="flex-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors"
-                title="Launch turn-by-turn navigation (supports Android Auto)"
+                className="flex-1 min-w-[80px] bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 text-center py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center transition-colors"
+                title={remainingStops.length < stops.length ? "Navigate remaining stops" : "Launch turn-by-turn navigation"}
               >
-                 <span className="mr-1">🧭</span> Navigate
+                 <span className="mr-1">🧭</span> Navigate{remainingStops.length > 0 && remainingStops.length < stops.length ? ` (${remainingStops.length})` : ''}
               </a>
             )}
             {getStreetViewLink() !== '#' && (
-              <a href={getStreetViewLink()} target="_blank" rel="noopener noreferrer" className="flex-1 bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors">
-                 <span className="mr-1">📸</span> Street View
+              <a href={getStreetViewLink()} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-[80px] bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/40 text-center py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center transition-colors">
+                 <span className="mr-1">📸</span> Street
               </a>
             )}
             <button 
+              type="button"
               onClick={handleShareJob}
-              className="flex-1 bg-sky-600/20 text-sky-400 border border-sky-500/30 hover:bg-sky-600/40 text-center py-1.5 rounded text-xs font-semibold flex items-center justify-center transition-colors"
-              title="Share Job & Live Pins Link"
+              className="flex-1 min-w-[70px] bg-sky-600/20 text-sky-400 border border-sky-500/30 hover:bg-sky-600/40 text-center py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center transition-colors"
+              title="Share Team Job & Live Pins Link"
             >
               <Share2 size={13} className="mr-1" /> Share
             </button>
+            <button 
+              type="button"
+              onClick={() => openModal('invite', { jobId: job.id, jobName: job.jobName, tab: 'customer' })}
+              className={`flex-1 min-w-[78px] text-center py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center transition-colors border ${
+                job.trackingToken
+                  ? 'bg-emerald-600/25 text-emerald-300 border-emerald-500/50 hover:bg-emerald-600/40'
+                  : 'bg-teal-600/20 text-teal-300 border-teal-500/30 hover:bg-teal-600/40'
+              }`}
+              title="Customer Live Tracking Link"
+            >
+              <Radio size={13} className={`mr-1 ${job.trackingToken ? 'animate-pulse text-emerald-400' : ''}`} />
+              Track
+            </button>
         </div>
-        {job.note && <p className="text-gray-400 p-2 bg-gray-800 rounded italic text-xs mt-2">{job.note}</p>}
+
+        {/* Dispatch Instructions */}
+        {visibleInstructions.length > 0 && (
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-gray-300 block">Dispatch Instructions</span>
+            {visibleInstructions.map((inst, idx) => {
+              const targetMember = inst.target && inst.target !== 'all'
+                ? members.find(m => m.id === inst.target) || activeDrivers.find(d => d.id === inst.target)
+                : null;
+              const targetLabel = inst.target === currentUser.id
+                ? 'For You'
+                : (targetMember?.name || targetMember?.email || inst.target);
+
+              return (
+                <div
+                  key={inst.id || idx}
+                  className={`p-2.5 rounded-lg border text-xs ${
+                    inst.isPriority
+                      ? 'bg-red-950/40 border-red-500/50 text-red-100'
+                      : 'bg-gray-800/80 border-gray-700 text-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center flex-wrap gap-1.5 mb-1">
+                    {inst.isPriority && (
+                      <span className="px-1.5 py-0.5 rounded bg-red-600/40 border border-red-500/60 text-red-200 text-[10px] font-extrabold uppercase flex items-center gap-1">
+                        <AlertTriangle size={10} /> Priority
+                      </span>
+                    )}
+                    {inst.target && inst.target !== 'all' && (
+                      <span className="px-1.5 py-0.5 rounded bg-sky-600/30 border border-sky-500/40 text-sky-200 text-[10px] font-bold">
+                        {isDispatchView ? `To: ${targetLabel}` : targetLabel}
+                      </span>
+                    )}
+                  </div>
+                  <p className="leading-snug">{inst.text}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="text-gray-400 mt-2">
-            <strong className="text-gray-200">Team ({job.assignedDrivers?.length || 0}/{job.driversNeeded}):</strong> 
+            <strong className="text-gray-200">Team ({job.assignedDrivers?.length || 0}/{job.driversNeeded || 1}):</strong> 
             {job.assignedDrivers?.length > 0 ? (
                 <div className="flex flex-wrap gap-2 mt-1">
                    {job.assignedDrivers.map(d => {
                       const activeInfo = activeDrivers.find(ad => ad.id === d.id);
-                      const isStale = activeInfo && activeInfo.timestamp && activeInfo.timestamp.toMillis() < Date.now() - (5 * 60 * 1000);
+                      const isStale = activeInfo && activeInfo.timestamp && toMillisSafe(activeInfo.timestamp) < fiveMinAgo;
                       const isDriverFinished = (job.completedDrivers || []).includes(d.id);
 
-                      let statusColor = 'bg-gray-500'; // Offline
+                      let statusColor = 'bg-gray-500';
                       let statusText = 'Offline';
                       let dotStyle = activeInfo?.color ? { backgroundColor: activeInfo.color } : {};
                       
@@ -425,28 +836,38 @@ export default function JobDetails({ onClose }) {
         {isDispatchView && canAssign && (
             <div className="mt-2 bg-gray-800 p-2 rounded">
                <strong className="text-gray-300 text-xs uppercase block mb-1">Manage Team</strong>
-               <div className="max-h-24 overflow-y-auto space-y-1">
-                 {activeDrivers.map(d => {
-                    const isDriverAssigned = (job.assignedDrivers || []).some(ad => ad.id === d.id);
-                    return (
-                        <label key={d.id} className="flex items-center space-x-2 cursor-pointer">
-                           <input 
-                              type="checkbox" 
-                              checked={isDriverAssigned}
-                              onChange={e => handleToggleDriver(d.id, e.target.checked)}
-                              className="rounded bg-gray-600 border-gray-500 text-blue-500 focus:ring-blue-500" 
-                           />
-                           <span className="text-xs text-gray-300">{d.name || d.id}</span>
-                        </label>
-                    )
-                 })}
+               <div className="max-h-28 overflow-y-auto space-y-1">
+                 {members.length === 0 ? (
+                   <span className="text-xs text-gray-500 italic">No team members found.</span>
+                 ) : (
+                   members.map(m => {
+                      const isDriverAssigned = (job.assignedDrivers || []).some(ad => ad.id === m.id);
+                      const activeLoc = activeDrivers.find(ad => ad.id === m.id);
+                      const isOnline = activeLoc?.timestamp && toMillisSafe(activeLoc.timestamp) > fiveMinAgo;
+                      return (
+                          <label key={m.id} className="flex items-center justify-between space-x-2 cursor-pointer py-0.5">
+                             <div className="flex items-center space-x-2 truncate">
+                               <input 
+                                  type="checkbox" 
+                                  checked={isDriverAssigned}
+                                  onChange={e => handleToggleDriver(m.id, e.target.checked)}
+                                  className="rounded bg-gray-600 border-gray-500 text-blue-500 focus:ring-blue-500" 
+                               />
+                               <span className="text-xs text-gray-300 truncate">{m.name || m.email || m.id}</span>
+                             </div>
+                             {isOnline && (
+                               <span className="text-[10px] text-emerald-400 font-semibold shrink-0">GPS</span>
+                             )}
+                          </label>
+                      );
+                   })
+                 )}
                </div>
             </div>
         )}
         
         {/* Action Drawers: JOB, ADMIN (dispatch only), REPORT, CHAT */}
         <div className="mt-4 border border-gray-800 rounded-xl bg-slate-900/90 overflow-hidden shadow-lg">
-          {/* Header Buttons Bar */}
           <div className={`grid ${isDispatchView ? 'grid-cols-4' : 'grid-cols-3'} bg-slate-950 p-1 gap-1 border-b border-gray-800`}>
             <button
               onClick={() => setActiveDrawer(activeDrawer === 'JOB' ? null : 'JOB')}
@@ -486,6 +907,11 @@ export default function JobDetails({ onClose }) {
             >
               <FileText size={14} />
               <span>REPORT</span>
+              {notes.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-teal-500/20 text-teal-300 text-[10px] rounded-full font-bold border border-teal-500/30">
+                  {notes.length}
+                </span>
+              )}
               <ChevronDown size={12} className={`transition-transform duration-200 ${activeDrawer === 'REPORT' ? 'rotate-180 text-teal-400' : 'opacity-60'}`} />
             </button>
 
@@ -508,10 +934,8 @@ export default function JobDetails({ onClose }) {
             </button>
           </div>
 
-          {/* Drawer Content Panel */}
           {activeDrawer && (
             <div className="p-3 bg-slate-900/80">
-              {/* JOB Drawer */}
               {activeDrawer === 'JOB' && (
                 <div className="space-y-3">
                   {canAssign && !isAssigned && (
@@ -524,6 +948,16 @@ export default function JobDetails({ onClose }) {
                     </button>
                   )}
 
+                  {isAssigned && job.status === 'assigned' && (
+                    <button
+                      onClick={() => updateStatus('in-progress')}
+                      className="w-full bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-200 border border-emerald-500/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-emerald-400"
+                    >
+                      <Play size={16} />
+                      <span>Start Trip (En Route)</span>
+                    </button>
+                  )}
+
                   {canAssign && isAssigned && (
                     <button
                       onClick={() => updateStatus('unassigned', false, true)}
@@ -531,6 +965,16 @@ export default function JobDetails({ onClose }) {
                     >
                       <UserMinus size={16} />
                       <span>Unassign Me</span>
+                    </button>
+                  )}
+
+                  {isAssigned && !hasDriverFinished && job.status === 'in-progress' && !isDispatchView && (
+                    <button
+                      onClick={() => updateStatus('pending-completion')}
+                      className="w-full bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-amber-400"
+                    >
+                      <Flag size={16} />
+                      <span>Request Completion</span>
                     </button>
                   )}
 
@@ -558,13 +1002,12 @@ export default function JobDetails({ onClose }) {
                       className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-emerald-400"
                     >
                       <CheckCircle2 size={16} />
-                      <span>Complete Job</span>
+                      <span>{job.status === 'pending-completion' ? 'Approve & Complete Job' : 'Complete Job'}</span>
                     </button>
                   )}
                 </div>
               )}
 
-              {/* ADMIN Drawer (Dispatch Only) */}
               {isDispatchView && activeDrawer === 'ADMIN' && (
                 <div className="space-y-3">
                   <button
@@ -605,19 +1048,39 @@ export default function JobDetails({ onClose }) {
                     </button>
                   )}
 
-                  <button
-                    onClick={handleDelete}
-                    className="w-full bg-red-950/40 hover:bg-red-900/50 text-red-300 border border-red-700/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-red-400"
-                  >
-                    <Trash2 size={16} />
-                    <span>Delete Job</span>
-                  </button>
+                  {canDeleteJob && (
+                    <button
+                      onClick={handleDelete}
+                      className="w-full bg-red-950/40 hover:bg-red-900/50 text-red-300 border border-red-700/50 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-red-400"
+                    >
+                      <Trash2 size={16} />
+                      <span>Delete Job</span>
+                    </button>
+                  )}
                 </div>
               )}
 
-              {/* REPORT Drawer */}
               {activeDrawer === 'REPORT' && (
                 <div className="space-y-3">
+                  <div className="bg-gray-950/60 rounded-xl border border-gray-800/80 p-2.5 max-h-48 overflow-y-auto space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 block">
+                      Live Progress Updates
+                    </span>
+                    {notes.length === 0 ? (
+                      <p className="text-xs text-gray-500 italic py-2 text-center">No progress updates logged yet.</p>
+                    ) : (
+                      notes.map(note => (
+                        <div key={note.id} className="bg-slate-900/90 border border-slate-800 rounded-lg p-2 text-xs">
+                          <div className="flex justify-between items-center text-[10px] text-gray-400 mb-0.5">
+                            <span className="font-bold text-teal-300">{note.driverName || 'Driver'}</span>
+                            <span>{note.timestamp ? new Date(toMillisSafe(note.timestamp)).toLocaleString() : 'Just now'}</span>
+                          </div>
+                          <p className="text-gray-200 leading-snug">{note.text}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
                   <button
                     onClick={() => openModal('logProgress', { jobId: job.id, jobName: job.jobName })}
                     className="w-full bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-cyan-400"
@@ -627,11 +1090,35 @@ export default function JobDetails({ onClose }) {
                   </button>
 
                   <button
+                    onClick={() => openModal('podCapture', { jobId: job.id })}
+                    className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  >
+                    <ClipboardCheck size={16} />
+                    <span>Capture Proof of Delivery (POD)</span>
+                  </button>
+
+                  <button
                     onClick={() => openModal('logExpense', { jobId: job.id, jobName: job.jobName })}
                     className="w-full bg-orange-600/20 hover:bg-orange-600/30 text-orange-300 border border-orange-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-orange-400"
                   >
                     <FileText size={16} />
                     <span>Log Expense</span>
+                  </button>
+
+                  <button
+                    onClick={() => openModal('expenseLedger')}
+                    className="w-full bg-amber-600/15 hover:bg-amber-600/25 text-amber-300 border border-amber-500/35 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-amber-400"
+                  >
+                    <DollarSign size={16} />
+                    <span>{isDispatchView ? 'Company Expense Ledger' : 'My Expenses & Reimbursements'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => openModal('dvir', { vehicleId: job.vehicleId || '', jobId: job.id })}
+                    className="w-full bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/40 rounded-xl py-3.5 px-4 text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-all min-h-[46px] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-teal-400"
+                  >
+                    <ClipboardCheck size={16} />
+                    <span>Log Vehicle DVIR</span>
                   </button>
 
                   <button
@@ -644,7 +1131,6 @@ export default function JobDetails({ onClose }) {
                 </div>
               )}
 
-              {/* CHAT Drawer */}
               {activeDrawer === 'CHAT' && (
                 <div className="space-y-3">
                   <div className="max-h-60 overflow-y-auto p-2 space-y-2 bg-gray-950/60 rounded-xl border border-gray-800/80">

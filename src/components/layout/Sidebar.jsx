@@ -1,24 +1,62 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
+import { useInspections, useVehicles } from '../../hooks/useFirebase';
+import { getPublicAppBaseUrl } from '../../utils/formatters';
+import { isVehicleServiceDue } from '../../utils/vehicles';
 import JobsList from '../jobs/JobsList';
 import DriversList from '../jobs/DriversList';
-import { QrCode, Share2, Users, DollarSign, LayoutDashboard } from 'lucide-react';
+import { QrCode, Share2, Users, DollarSign, LayoutDashboard, Radio, X, Truck, ClipboardCheck, BarChart3 } from 'lucide-react';
 
 export default function Sidebar() {
   const isDispatchView = useAppStore(state => state.isDispatchView);
+  const currentUser = useAppStore(state => state.currentUser);
+  const members = useAppStore(state => state.members);
   const mainView = useAppStore(state => state.mainView);
   const setMainView = useAppStore(state => state.setMainView);
   const activeJobTab = useAppStore(state => state.activeJobTab);
   const setActiveJobTab = useAppStore(state => state.setActiveJobTab);
+  const jobSearchQuery = useAppStore(state => state.jobSearchQuery);
+  const setJobSearchQuery = useAppStore(state => state.setJobSearchQuery);
+  const jobFilter = useAppStore(state => state.jobFilter);
+  const setJobFilter = useAppStore(state => state.setJobFilter);
+  const isSharingLocation = useAppStore(state => state.isSharingLocation);
+  const setIsSharingLocation = useAppStore(state => state.setIsSharingLocation);
   const companyName = useAppStore(state => state.companyName);
   const companyId = useAppStore(state => state.companyId);
   const selectedJobId = useAppStore(state => state.selectedJobId);
   const openModal = useAppStore(state => state.openModal);
   const addToast = useToastStore((state) => state.addToast);
+  const [updatingDuty, setUpdatingDuty] = useState(false);
+  const vehicles = useVehicles();
+  const inspections = useInspections();
+  const openDefectCount = inspections.filter((i) => i.overallStatus !== 'safe' && !i.mechanicResolved).length;
+  const serviceDueCount = vehicles.filter(isVehicleServiceDue).length;
+
+  const myMember = members.find(m => m.id === currentUser?.id);
+  const myDutyStatus = myMember?.onDutyStatus || 'on_duty';
+
+  const handleSelfDutyChange = async (nextDuty) => {
+    if (!companyId || !currentUser?.id || updatingDuty || nextDuty === myDutyStatus) return;
+    setUpdatingDuty(true);
+    try {
+      await updateDoc(doc(db, `companies/${companyId}/members/${currentUser.id}`), {
+        onDutyStatus: nextDuty,
+        updatedAt: serverTimestamp()
+      });
+      const label = nextDuty === 'on_duty' ? 'On Duty' : nextDuty === 'break' ? 'On Break' : 'Off Duty';
+      addToast(`Duty status set to ${label}`, 'success');
+    } catch (err) {
+      console.error('Failed to update duty status:', err);
+      addToast('Could not update duty status', 'error');
+    }
+    setUpdatingDuty(false);
+  };
 
   const handleShareTeamMap = async () => {
-    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    const baseUrl = getPublicAppBaseUrl();
     let shareUrl = `${baseUrl}?company=${companyId || ''}`;
     if (selectedJobId) {
       shareUrl += `&job=${selectedJobId}`;
@@ -53,7 +91,7 @@ export default function Sidebar() {
 
   return (
     <div className="flex flex-col h-full bg-slate-900/50 backdrop-blur-md">
-      <div className="mb-6 p-4">
+      <div className="mb-4 p-4">
         <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-3">Company Workspace</h2>
         <div className="grid grid-cols-6 gap-2">
           <div 
@@ -85,10 +123,100 @@ export default function Sidebar() {
             <QrCode size={18} />
           </button>
         </div>
+
+        {/* Driver Live GPS Sharing Toggle & My Expenses */}
+        {!isDispatchView && (
+          <div className="mt-3 space-y-2">
+            <button
+              type="button"
+              onClick={() => setIsSharingLocation(!isSharingLocation)}
+              className={`w-full py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                isSharingLocation
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20'
+                  : 'bg-slate-800/70 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+              }`}
+            >
+              <span className="flex items-center space-x-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  {isSharingLocation && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isSharingLocation ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
+                </span>
+                <span>{isSharingLocation ? 'Sharing Live GPS — Tap to Pause' : 'GPS Sharing Paused — Tap to Resume'}</span>
+              </span>
+              <Radio size={14} className={isSharingLocation ? 'text-emerald-400' : 'text-slate-500'} />
+            </button>
+
+            <div className="bg-slate-800/60 border border-slate-700/80 rounded-xl p-1.5">
+              <div className="flex items-center justify-between px-1.5 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Duty Status</span>
+                <span className={`text-[10px] font-bold ${
+                  myDutyStatus === 'on_duty'
+                    ? 'text-emerald-400'
+                    : myDutyStatus === 'break'
+                    ? 'text-amber-400'
+                    : 'text-slate-400'
+                }`}>
+                  {myDutyStatus === 'on_duty' ? 'Active' : myDutyStatus === 'break' ? 'Break' : 'Offline'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { id: 'on_duty', label: 'On Duty', activeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+                  { id: 'break', label: 'On Break', activeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+                  { id: 'off_duty', label: 'Off Duty', activeClass: 'bg-slate-700 text-slate-200 border-slate-500' }
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={updatingDuty}
+                    onClick={() => handleSelfDutyChange(opt.id)}
+                    className={`py-1.5 px-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-60 ${
+                      myDutyStatus === opt.id
+                        ? opt.activeClass
+                        : 'bg-slate-900/50 text-slate-400 border-transparent hover:text-slate-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => openModal('expenseLedger')}
+              className="w-full py-2 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-bold text-orange-300 flex items-center justify-center space-x-1.5 transition-colors cursor-pointer shadow-sm"
+            >
+              <DollarSign size={14} className="text-orange-400" />
+              <span>My Expenses & Reimbursements</span>
+            </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => openModal('dvir')}
+                className="py-2 px-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-[11px] font-bold text-teal-300 flex items-center justify-center space-x-1.5 transition-colors cursor-pointer shadow-sm"
+              >
+                <ClipboardCheck size={14} className="text-teal-400" />
+                <span>Pre/Post DVIR</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openModal('fleetVehicles')}
+                className="py-2 px-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-[11px] font-bold text-sky-300 flex items-center justify-center space-x-1.5 transition-colors cursor-pointer shadow-sm"
+              >
+                <Truck size={14} className="text-sky-400" />
+                <span>Fleet Units</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {isDispatchView && (
-        <div className="mb-6 px-4 space-y-2">
+        <div className="mb-5 px-4 space-y-2">
           <h2 className="text-xs font-bold text-primary-400 uppercase tracking-widest mb-2">Management</h2>
           <button onClick={() => openModal('createJob')} className="w-full btn-primary flex items-center justify-center space-x-2">
             <span className="text-xl leading-none">+</span>
@@ -125,6 +253,44 @@ export default function Sidebar() {
               <span>Expense Ledger</span>
             </button>
           </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => openModal('fleetVehicles')}
+              className="flex items-center justify-center space-x-1.5 py-2 px-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-bold text-teal-300 transition-colors cursor-pointer shadow-sm"
+              title="Manage Fleet Vehicles & Service Schedules"
+            >
+              <Truck size={14} className="text-teal-400 shrink-0" />
+              <span className="truncate">Fleet Vehicles</span>
+              {serviceDueCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 font-extrabold">
+                  {serviceDueCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => openModal('dvir')}
+              className="flex items-center justify-center space-x-1.5 py-2 px-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-bold text-emerald-300 transition-colors cursor-pointer shadow-sm"
+              title="DVIR Pre/Post-Trip Inspections & Defect Sign-Off"
+            >
+              <ClipboardCheck size={14} className="text-emerald-400 shrink-0" />
+              <span className="truncate">DVIR Logs</span>
+              {openDefectCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-red-500/25 text-red-300 border border-red-500/40 font-extrabold">
+                  {openDefectCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <button
+            onClick={() => openModal('fleetAnalytics')}
+            className="w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 transition-colors cursor-pointer shadow-sm"
+            title="Fleet KPIs, SLA Compliance & Cost-per-Mile"
+          >
+            <BarChart3 size={14} className="text-indigo-400" />
+            <span>Fleet Analytics & KPIs</span>
+          </button>
         </div>
       )}
 
@@ -149,13 +315,50 @@ export default function Sidebar() {
         ></div>
       </div>
       
-      {/* Search */}
-      <div className="px-4 mb-4">
-        <input 
-          type="text" 
-          placeholder="Search jobs..." 
-          className="glass-input text-sm py-2 rounded-full px-5"
-        />
+      {/* Search & Filter Pills */}
+      <div className="px-4 mb-4 space-y-2">
+        <div className="relative">
+          <input 
+            type="text" 
+            value={jobSearchQuery}
+            onChange={(e) => setJobSearchQuery(e.target.value)}
+            placeholder="Search jobs, stops, or drivers..." 
+            className="glass-input text-sm py-2 rounded-full pl-5 pr-9"
+          />
+          {jobSearchQuery && (
+            <button
+              type="button"
+              onClick={() => setJobSearchQuery('')}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {activeJobTab === 'current' && (
+          <div className="flex items-center gap-1.5">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'mine', label: 'My Jobs' },
+              { id: 'open', label: 'Open' }
+            ].map(pill => (
+              <button
+                key={pill.id}
+                type="button"
+                onClick={() => setJobFilter(pill.id)}
+                className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                  jobFilter === pill.id
+                    ? 'bg-primary-500/20 text-primary-300 border-primary-500/50'
+                    : 'bg-slate-800/60 text-gray-400 border-white/5 hover:text-gray-200'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Lists Container */}

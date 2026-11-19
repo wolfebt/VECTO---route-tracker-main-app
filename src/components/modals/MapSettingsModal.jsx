@@ -1,9 +1,19 @@
 import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { Map, Activity, Layers, Check } from 'lucide-react';
+import { Map, Activity, Layers, Check, Route } from 'lucide-react';
 
 export default function MapSettingsModal() {
-  const { modals, closeModal, routeStyle, setRouteStyle, showTrafficLayer, setShowTrafficLayer } = useAppStore();
+  const {
+    modals,
+    closeModal,
+    routeStyle,
+    setRouteStyle,
+    showTrafficLayer,
+    setShowTrafficLayer,
+    showAllActiveRoutes,
+    setShowAllActiveRoutes,
+    isDispatchView
+  } = useAppStore();
 
   if (!modals.mapSettings) return null;
 
@@ -136,6 +146,38 @@ export default function MapSettingsModal() {
               </button>
             </div>
           </div>
+
+          {isDispatchView && (
+            <div className="pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between bg-slate-900/50 p-3.5 rounded-xl border border-white/5">
+                <div className="flex items-center space-x-3">
+                  <div className={`p-2 rounded-lg ${showAllActiveRoutes ? 'bg-sky-500/20 text-sky-400' : 'bg-gray-800 text-gray-400'}`}>
+                    <Route size={18} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-gray-200 block">All Active Fleet Routes</span>
+                    <span className="text-[11px] text-gray-400">Preview all in-progress and assigned routes simultaneously</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAllActiveRoutes(!showAllActiveRoutes)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    showAllActiveRoutes ? 'bg-sky-500' : 'bg-gray-700'
+                  }`}
+                  role="switch"
+                  aria-checked={showAllActiveRoutes}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      showAllActiveRoutes ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end pt-5 border-t border-white/10 mt-6">

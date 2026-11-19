@@ -1,0 +1,66 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isCompanyMember(companyId) {
+      return isSignedIn() && (
+        firestore.exists(/databases/(default)/documents/companies/$(companyId)/members/$(request.auth.uid)) ||
+        firestore.get(/databases/(default)/documents/companies/$(companyId)).data.createdBy == request.auth.uid
+      );
+    }
+
+    function isDispatcher(companyId) {
+      return isSignedIn() && (
+        firestore.get(/databases/(default)/documents/companies/$(companyId)).data.createdBy == request.auth.uid ||
+        (
+          firestore.exists(/databases/(default)/documents/companies/$(companyId)/members/$(request.auth.uid)) &&
+          (
+            firestore.get(/databases/(default)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.permissions.canManageDrivers == true ||
+            firestore.get(/databases/(default)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.permissions.canCreateJob == true
+          )
+        )
+      );
+    }
+
+    function isValidUpload() {
+      return request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+    }
+
+    function isUploaderOwned(fileName) {
+      return fileName.matches('.*_' + request.auth.uid + '([._].*)?$');
+    }
+
+    match /chat_files/{companyId}/{jobId}/{fileName} {
+      allow read: if isCompanyMember(companyId);
+      allow create: if isCompanyMember(companyId) && resource == null && isValidUpload() && request.resource.contentType.matches('image/.*');
+      allow update: if false;
+      allow delete: if isDispatcher(companyId) || (isCompanyMember(companyId) && isUploaderOwned(fileName));
+    }
+
+    match /receipts/{companyId}/{jobId}/{fileName} {
+      allow read: if isCompanyMember(companyId);
+      allow create: if isCompanyMember(companyId) && resource == null && isValidUpload();
+      allow update: if false;
+      allow delete: if isDispatcher(companyId) || (isCompanyMember(companyId) && isUploaderOwned(fileName));
+    }
+
+    match /pod/{companyId}/{jobId}/{fileName} {
+      allow read: if isCompanyMember(companyId);
+      allow create: if isCompanyMember(companyId) && resource == null && isValidUpload() && request.resource.contentType.matches('image/.*');
+      allow update: if false;
+      allow delete: if isDispatcher(companyId) || (isCompanyMember(companyId) && isUploaderOwned(fileName));
+    }
+
+    match /dvir/{companyId}/{vehicleId}/{fileName} {
+      allow read: if isCompanyMember(companyId);
+      allow create: if isCompanyMember(companyId) && resource == null && isValidUpload() && request.resource.contentType.matches('image/.*');
+      allow update: if false;
+      allow delete: if isDispatcher(companyId) || (isCompanyMember(companyId) && isUploaderOwned(fileName));
+    }
+  }
+}

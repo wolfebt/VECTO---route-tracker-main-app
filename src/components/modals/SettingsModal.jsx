@@ -1,7 +1,9 @@
 import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuth } from '../../hooks/useFirebase';
-import { LogOut, User, Map, BookOpen, Cpu, Code2, Shield } from 'lucide-react';
+import { LogOut, User, Map, BookOpen, Cpu, Code2, Shield, Bell } from 'lucide-react';
+import { enableNotifications } from '../../hooks/useNotifications';
+import { useToastStore } from '../../store/useToastStore';
 
 export default function SettingsModal() {
   const { modals, closeModal, openModal, isDispatchView } = useAppStore();
@@ -80,7 +82,40 @@ export default function SettingsModal() {
             </button>
           )}
 
-          <div className="pt-3 border-t border-white/10">
+          <button
+          type="button"
+          onClick={async () => {
+            const addToast = useToastStore.getState().addToast;
+            const userId = useAppStore.getState().currentUser?.id;
+            try {
+              const res = await enableNotifications(userId);
+              if (res.granted) {
+                addToast(
+                  res.platform === 'native'
+                    ? 'Push notifications enabled for this device!'
+                    : 'Browser dispatch notifications enabled!',
+                  'success'
+                );
+              } else if (res.status === 'unsupported') {
+                addToast('Notifications are not supported in this browser.', 'warning');
+              } else {
+                addToast('Notification permission was declined. Enable it in device/browser settings.', 'warning');
+              }
+            } catch (err) {
+              console.error(err);
+              addToast('Failed to configure notifications.', 'error');
+            }
+          }}
+          className="w-full py-2.5 px-3 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg font-medium flex items-center gap-3 transition border border-white/5"
+        >
+          <Bell size={18} className="text-amber-400" />
+          <div className="text-left flex-1">
+            <div className="text-sm font-semibold">Push & Dispatch Notifications</div>
+            <div className="text-[11px] text-gray-400">Enable job assignment, priority & chat alerts</div>
+          </div>
+        </button>
+
+        <div className="pt-3 border-t border-white/10">
             <button 
               onClick={handleLogout} 
               className="w-full bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50 font-semibold py-3 px-4 rounded-lg transition-all duration-300 flex items-center justify-between group cursor-pointer"

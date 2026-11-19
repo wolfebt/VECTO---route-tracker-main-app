@@ -5,20 +5,26 @@ import { useJobs } from '../../hooks/useFirebase';
 import { db, storage } from '../../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { FileText, X, Camera, Paperclip, Trash2, CheckCircle2 } from 'lucide-react';
+import { FileText, X, Camera, Paperclip, Trash2, CheckCircle2, Sparkles, Loader2 } from 'lucide-react';
+import { scanReceiptWithGemini, EXPENSE_CATEGORIES } from '../../utils/receiptOcr';
 
 export default function LogExpenseModal() {
-  const { modals, closeModal, companyId, currentUser } = useAppStore();
+  const { modals, closeModal, companyId, currentUser, geminiApiKey } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
   const jobs = useJobs();
 
   const [expenseType, setExpenseType] = useState('fuel');
   const [amount, setAmount] = useState('');
+  const [merchant, setMerchant] = useState('');
   const [description, setDescription] = useState('');
   const [receiptFile, setReceiptFile] = useState(null);
   const [receiptPreview, setReceiptPreview] = useState(null);
+  const [ocrData, setOcrData] = useState(null);
+  const [scanningReceipt, setScanningReceipt] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
   const fileInputRef = useRef(null);
+
+  const activeGeminiKey = geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
 
   const modalData = modals.logExpense;
   const jobId = typeof modalData === 'object' ? modalData?.jobId : null;
@@ -29,13 +35,50 @@ export default function LogExpenseModal() {
   const handleClose = () => {
     setExpenseType('fuel');
     setAmount('');
+    setMerchant('');
     setDescription('');
+    setOcrData(null);
+    setScanningReceipt(false);
     setReceiptFile(null);
     if (receiptPreview) {
       URL.revokeObjectURL(receiptPreview);
       setReceiptPreview(null);
     }
     closeModal('logExpense');
+  };
+
+  const runReceiptOcr = async (fileToScan) => {
+    const file = fileToScan || receiptFile;
+    if (!file) return;
+    setScanningReceipt(true);
+    try {
+      const result = await scanReceiptWithGemini(file, activeGeminiKey);
+      if (result.amount > 0) {
+        setAmount(result.amount.toFixed(2));
+      }
+      if (EXPENSE_CATEGORIES.includes(result.category)) {
+        setExpenseType(result.category);
+      }
+      if (result.merchant) {
+        setMerchant(result.merchant);
+      }
+      const autoSummary = [result.date, result.summary].filter(Boolean).join(' — ');
+      if (autoSummary) {
+        setDescription((prev) => (prev.trim() ? prev : autoSummary));
+      }
+      setOcrData({
+        merchant: result.merchant || '',
+        amount: result.amount || 0,
+        category: result.category || 'custom',
+        date: result.date || '',
+        model: result.model
+      });
+      addToast('Receipt scanned & auto-filled with Gemini!', 'success');
+    } catch (err) {
+      console.warn('Gemini receipt OCR failed:', err);
+      addToast('Could not auto-read receipt: ' + (err?.message || 'Unknown error'), 'warning');
+    }
+    setScanningReceipt(false);
   };
 
   const handleFileChange = (e) => {
@@ -48,16 +91,20 @@ export default function LogExpenseModal() {
     }
 
     setReceiptFile(file);
+    setOcrData(null);
     if (file.type.startsWith('image/')) {
       const previewUrl = URL.createObjectURL(file);
       setReceiptPreview(previewUrl);
     } else {
       setReceiptPreview(null);
     }
+
+    runReceiptOcr(file);
   };
 
   const handleRemoveReceipt = () => {
     setReceiptFile(null);
+    setOcrData(null);
     if (receiptPreview) {
       URL.revokeObjectURL(receiptPreview);
       setReceiptPreview(null);
@@ -75,7 +122,8 @@ export default function LogExpenseModal() {
       let receiptUrl = null;
 
       if (receiptFile) {
-        const fileExt = receiptFile.name.split('.').pop() || 'jpg';
+        const rawExt = receiptFile.name.split('.').pop();
+        const fileExt = receiptFile.type === 'application/pdf' ? 'pdf' : (rawExt || 'jpg');
         const storagePath = `receipts/${companyId}/${jobId}/${Date.now()}_${currentUser.id}.${fileExt}`;
         const storageRef = ref(storage, storagePath);
         await uploadBytes(storageRef, receiptFile);
@@ -83,8 +131,13 @@ export default function LogExpenseModal() {
       }
 
       await addDoc(collection(db, `companies/${companyId}/jobs/${jobId}/expenses`), {
+        companyId,
+        jobId,
+        jobName: (job?.jobName || 'Unnamed Job').slice(0, 200),
         type: expenseType,
         amount: parseFloat(amount),
+        merchant: merchant.trim().slice(0, 200) || null,
+        ...(ocrData ? { ocrData } : {}),
         description: description.trim(),
         receiptUrl: receiptUrl || null,
         driverId: currentUser.id,
@@ -110,17 +163,24 @@ export default function LogExpenseModal() {
       >
         {/* Modal Header */}
         <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex justify-between items-center">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-orange-500/20 text-orange-400 rounded-xl border border-orange-500/30">
-              <FileText size={20} />
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2 bg-orange-500/20 text-orange-400 rounded-xl border border-orange-500/30">
+                <FileText size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-white">Log Driver Expense</h2>
+                  {ocrData && (
+                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[10px] font-bold flex items-center gap-1">
+                      <Sparkles size={10} /> AI Auto-Filled
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 font-medium truncate max-w-[280px]">
+                  {job?.jobName ? `Job: ${job.jobName}` : 'Add trip expense & receipt'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-bold text-white">Log Driver Expense</h2>
-              <p className="text-xs text-slate-400 font-medium truncate max-w-[280px]">
-                {job?.jobName ? `Job: ${job.jobName}` : 'Add trip expense & receipt'}
-              </p>
-            </div>
-          </div>
           <button 
             onClick={handleClose} 
             className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
@@ -167,6 +227,20 @@ export default function LogExpenseModal() {
             />
           </div>
 
+          {/* Merchant / Vendor */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+              Merchant / Vendor (Optional)
+            </label>
+            <input
+              type="text"
+              value={merchant}
+              onChange={(e) => setMerchant(e.target.value)}
+              placeholder="E.g., Pilot Travel Center #402, Love's..."
+              className="w-full bg-slate-800/80 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none placeholder:text-slate-500"
+            />
+          </div>
+
           {/* Description */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
@@ -208,30 +282,44 @@ export default function LogExpenseModal() {
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleRemoveReceipt}
-                  className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition-colors shrink-0"
-                  title="Remove receipt"
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="flex items-center space-x-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => runReceiptOcr()}
+                    disabled={scanningReceipt}
+                    className="px-2.5 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold flex items-center gap-1 transition-colors disabled:opacity-50"
+                    title="Scan receipt with Gemini Flash"
+                  >
+                    {scanningReceipt ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    <span>{scanningReceipt ? 'Scanning...' : 'Scan with AI'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveReceipt}
+                    className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition-colors shrink-0"
+                    title="Remove receipt"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             ) : (
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-700 hover:border-orange-500/50 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-slate-800/30 hover:bg-slate-800/50 transition-all text-center"
-              >
-                <div className="flex items-center space-x-2 text-orange-400">
-                  <Camera size={20} />
-                  <Paperclip size={18} />
+              <div className="space-y-2">
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-700 hover:border-orange-500/50 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-slate-800/30 hover:bg-slate-800/50 transition-all text-center"
+                >
+                  <div className="flex items-center space-x-2 text-orange-400">
+                    <Camera size={20} />
+                    <Paperclip size={18} />
+                  </div>
+                  <p className="text-xs font-semibold text-slate-200">
+                    Tap to take photo or upload receipt
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    PNG, JPG, WebP, or PDF up to 10MB • Gemini AI auto-fill ready
+                  </p>
                 </div>
-                <p className="text-xs font-semibold text-slate-200">
-                  Tap to take photo or upload receipt
-                </p>
-                <p className="text-[10px] text-slate-500">
-                  PNG, JPG, WebP, or PDF up to 10MB
-                </p>
               </div>
             )}
 

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, arrayRemove, deleteField, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { hashCompanyPassword } from '../../utils/crypto';
 
 export default function CompanySettingsModal() {
-  const { modals, closeModal, openModal, companyId, clearCompany } = useAppStore();
+  const { modals, closeModal, openModal, companyId, clearCompany, isDispatchView, memberPermissions, currentUser } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
   
   const [formData, setFormData] = useState({
@@ -15,27 +16,42 @@ export default function CompanySettingsModal() {
     email: '',
     showNameplates: true
   });
+  const [requirePassword, setRequirePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [removePassword, setRemovePassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [originalData, setOriginalData] = useState(null);
+  const companyInfoRef = useRef({ name: '', createdBy: '', requirePassword: false });
 
   useEffect(() => {
     if (modals.companySettings && companyId) {
       const fetchCompanyData = async () => {
         try {
-          const docRef = doc(db, 'companies', companyId);
-          const docSnap = await getDoc(docRef);
+          const [docSnap, profileSnap] = await Promise.all([
+            getDoc(doc(db, 'companies', companyId)),
+            getDoc(doc(db, 'companies', companyId, 'private', 'profile')).catch(() => null)
+          ]);
           if (docSnap.exists()) {
             const data = docSnap.data();
+            const profileData = profileSnap && profileSnap.exists() ? profileSnap.data() : {};
+            companyInfoRef.current = {
+              name: data.name || '',
+              createdBy: data.createdBy || '',
+              requirePassword: !!data.requirePassword
+            };
             const loadedData = {
-              address: data.address || '',
-              contactName: data.contactName || '',
-              phone: data.phone || '',
-              email: data.email || '',
+              address: profileData.address ?? data.address ?? '',
+              contactName: profileData.contactName ?? data.contactName ?? '',
+              phone: profileData.phone ?? data.phone ?? '',
+              email: profileData.email ?? data.email ?? '',
               showNameplates: data.showNameplates ?? true
             };
             setFormData(loadedData);
             setOriginalData(loadedData);
+            setRequirePassword(!!data.requirePassword);
+            setNewPassword('');
+            setRemovePassword(false);
           }
         } catch (error) {
           console.error("Error fetching company data:", error);
@@ -48,8 +64,11 @@ export default function CompanySettingsModal() {
   if (!modals.companySettings) return null;
 
   const handleClose = () => {
-    if (originalData) {
-      const isDirty = Object.keys(originalData).some(key => formData[key] !== originalData[key]);
+    if (isDispatchView && originalData) {
+      const isDirty =
+        Object.keys(originalData).some(key => formData[key] !== originalData[key]) ||
+        newPassword !== '' ||
+        removePassword;
       if (isDirty && !window.confirm("You have unsaved changes. Are you sure you want to close without saving?")) {
         return;
       }
@@ -64,15 +83,73 @@ export default function CompanySettingsModal() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!isDispatchView) return;
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'companies', companyId), {
-        address: formData.address,
-        contactName: formData.contactName,
-        phone: formData.phone,
-        email: formData.email,
-        showNameplates: formData.showNameplates
-      });
+      await setDoc(
+        doc(db, 'companies', companyId, 'private', 'profile'),
+        {
+          address: formData.address,
+          contactName: formData.contactName,
+          phone: formData.phone,
+          email: formData.email,
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      const updates = {
+        address: deleteField(),
+        contactName: deleteField(),
+        phone: deleteField(),
+        email: deleteField(),
+        showNameplates: formData.showNameplates,
+        updatedAt: serverTimestamp()
+      };
+
+      let nextRequirePassword = companyInfoRef.current.requirePassword;
+      const trimmedPw = newPassword.trim();
+      if (removePassword) {
+        nextRequirePassword = false;
+        updates.requirePassword = false;
+        updates.passwordHash = deleteField();
+        updates.password = deleteField();
+        await setDoc(
+          doc(db, 'companies', companyId, 'private', 'security'),
+          { passwordHash: null, updatedAt: serverTimestamp() },
+          { merge: true }
+        ).catch(() => {});
+      } else if (trimmedPw) {
+        nextRequirePassword = true;
+        const passwordHash = await hashCompanyPassword(companyId, trimmedPw);
+        await setDoc(
+          doc(db, 'companies', companyId, 'private', 'security'),
+          {
+            passwordHash,
+            updatedAt: serverTimestamp()
+          },
+          { merge: true }
+        );
+        updates.requirePassword = true;
+        updates.passwordHash = deleteField();
+        updates.password = deleteField();
+      }
+
+      await updateDoc(doc(db, 'companies', companyId), updates);
+
+      if (companyInfoRef.current.name && companyInfoRef.current.createdBy) {
+        await setDoc(
+          doc(db, 'company_directory', companyId),
+          {
+            name: companyInfoRef.current.name,
+            requirePassword: nextRequirePassword,
+            createdBy: companyInfoRef.current.createdBy,
+            updatedAt: serverTimestamp()
+          },
+          { merge: true }
+        ).catch(() => {});
+      }
+
       addToast("Company settings saved!", "success");
       closeModal('companySettings');
     } catch (error) {
@@ -89,10 +166,31 @@ export default function CompanySettingsModal() {
     }
   };
 
+  const handleLeaveCompany = async () => {
+    if (!currentUser?.id || memberPermissions?.isCreator) return;
+    if (!window.confirm("Are you sure you want to leave this fleet workspace?")) return;
+    try {
+      await deleteDoc(doc(db, `companies/${companyId}/active_drivers/${currentUser.id}`)).catch(() => {});
+      await deleteDoc(doc(db, `companies/${companyId}/members/${currentUser.id}`)).catch(() => {});
+      await updateDoc(doc(db, 'users', currentUser.id), {
+        companies: arrayRemove(companyId)
+      });
+      useAppStore.setState(state => ({
+        currentUser: state.currentUser
+          ? { ...state.currentUser, companies: (state.currentUser.companies || []).filter(c => c !== companyId) }
+          : null
+      }));
+      clearCompany();
+      closeModal('companySettings');
+      addToast("Left fleet workspace.", "info");
+    } catch (error) {
+      console.error("Error leaving company:", error);
+      addToast("Failed to leave workspace: " + error.message, "error");
+    }
+  };
+
   const handleDeleteCompany = () => {
     if (window.confirm("Are you sure you want to completely delete this company and all its data? This action cannot be undone.")) {
-      // In a production app, this would trigger a cloud function to recursively delete subcollections
-      // and remove the companyId from all members' user profiles.
       addToast("Deleting a company is disabled in this environment.", "info");
     }
   };
@@ -119,8 +217,9 @@ export default function CompanySettingsModal() {
                 name="address"
                 value={formData.address}
                 onChange={handleChange}
-                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"
-                placeholder="123 Main St..."
+                disabled={!isDispatchView}
+                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600 disabled:opacity-60"
+                placeholder={isDispatchView ? "123 Main St..." : "Not provided"}
               />
             </div>
             
@@ -131,8 +230,9 @@ export default function CompanySettingsModal() {
                 name="contactName"
                 value={formData.contactName}
                 onChange={handleChange}
-                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"
-                placeholder="Jane Doe"
+                disabled={!isDispatchView}
+                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600 disabled:opacity-60"
+                placeholder={isDispatchView ? "Jane Doe" : "Not provided"}
               />
             </div>
 
@@ -143,8 +243,9 @@ export default function CompanySettingsModal() {
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
-                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"
-                placeholder="(555) 123-4567"
+                disabled={!isDispatchView}
+                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600 disabled:opacity-60"
+                placeholder={isDispatchView ? "(555) 123-4567" : "Not provided"}
               />
             </div>
 
@@ -155,8 +256,9 @@ export default function CompanySettingsModal() {
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600"
-                placeholder="contact@company.com"
+                disabled={!isDispatchView}
+                className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600 disabled:opacity-60"
+                placeholder={isDispatchView ? "contact@company.com" : "Not provided"}
               />
             </div>
 
@@ -167,22 +269,61 @@ export default function CompanySettingsModal() {
                 name="showNameplates"
                 checked={formData.showNameplates}
                 onChange={handleChange}
-                className="w-5 h-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                disabled={!isDispatchView}
+                className="w-5 h-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 disabled:opacity-60"
               />
               <label htmlFor="showNameplates" className="text-sm font-medium text-gray-200 cursor-pointer">
                 Show Driver Nameplates on Map
               </label>
             </div>
 
-            <div className="pt-4 border-t border-gray-700 space-y-3">
-              <button 
-                type="submit" 
-                disabled={loading}
-                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50"
-              >
-                {loading ? 'Saving...' : 'Save Settings'}
-              </button>
-            </div>
+            {isDispatchView && (
+              <>
+                <div className="pt-3 border-t border-gray-700 space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">
+                    Update Access Password
+                    <span className="text-xs text-gray-400 font-normal ml-2">
+                      ({requirePassword ? 'Currently password protected' : 'Currently open'})
+                    </span>
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (e.target.value) setRemovePassword(false);
+                    }}
+                    disabled={removePassword}
+                    className="w-full bg-gray-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600 disabled:opacity-50"
+                    placeholder="Leave blank to keep existing password"
+                  />
+                  {requirePassword && (
+                    <label className="flex items-center space-x-2 text-xs text-amber-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={removePassword}
+                        onChange={(e) => {
+                          setRemovePassword(e.target.checked);
+                          if (e.target.checked) setNewPassword('');
+                        }}
+                        className="rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
+                      />
+                      <span>Remove access password protection</span>
+                    </label>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-gray-700 space-y-3">
+                  <button 
+                    type="submit" 
+                    disabled={loading}
+                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50"
+                  >
+                    {loading ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </>
+            )}
           </form>
 
           <div className="mt-6 pt-4 border-t border-gray-700 space-y-3">
@@ -201,13 +342,24 @@ export default function CompanySettingsModal() {
               >
                 Change Company
               </button>
-              <button 
-                type="button" 
-                onClick={handleDeleteCompany}
-                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
-              >
-                Delete Company
-              </button>
+             {!memberPermissions?.isCreator && (
+               <button
+                 type="button"
+                 onClick={handleLeaveCompany}
+                 className="w-full px-4 py-2 bg-amber-600/80 hover:bg-amber-600 text-white rounded-lg"
+               >
+                 Leave Fleet Workspace
+               </button>
+             )}
+             {memberPermissions?.isCreator && (
+               <button 
+                  type="button" 
+                  onClick={handleDeleteCompany}
+                  className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
+                >
+                  Delete Company
+                </button>
+             )}
           </div>
         </div>
       </div>

@@ -2,11 +2,14 @@ import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useToastStore } from '../../store/useToastStore';
 import { useCompany, useActiveDrivers, useJobs } from '../../hooks/useFirebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { doc, updateDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { sortDriverRoster } from '../../utils/roster';
+import { toMillisSafe } from '../../utils/formatters';
 import { Users, Star, ArrowUp, ArrowDown, X } from 'lucide-react';
 
 export default function DriverRosterModal() {
-  const { modals, closeModal, companyId, isDispatchView } = useAppStore();
+  const { modals, closeModal, companyId, isDispatchView, currentUser } = useAppStore();
   const addToast = useToastStore((state) => state.addToast);
   const { members } = useCompany();
   const activeDrivers = useActiveDrivers();
@@ -17,25 +20,7 @@ export default function DriverRosterModal() {
   if (!modals.driverRoster) return null;
 
   const fiveMinAgo = Date.now() - (5 * 60 * 1000);
-
-  // Sort members:
-  // 1. Priority drivers first
-  // 2. onDutyStatus: on_duty > break > off_duty
-  // 3. rosterOrder (ascending)
-  const sortedMembers = [...members].sort((a, b) => {
-    const aPriority = !!a.isPriorityDriver;
-    const bPriority = !!b.isPriorityDriver;
-    if (aPriority !== bPriority) return aPriority ? -1 : 1;
-
-    const dutyWeight = { on_duty: 3, break: 2, off_duty: 1 };
-    const aDuty = dutyWeight[a.onDutyStatus || 'on_duty'] || 3;
-    const bDuty = dutyWeight[b.onDutyStatus || 'on_duty'] || 3;
-    if (aDuty !== bDuty) return bDuty - aDuty;
-
-    const aOrder = typeof a.rosterOrder === 'number' ? a.rosterOrder : 999;
-    const bOrder = typeof b.rosterOrder === 'number' ? b.rosterOrder : 999;
-    return aOrder - bOrder;
-  });
+  const sortedMembers = sortDriverRoster(members);
 
   // Determine who is next up in the queue (first on-duty driver)
   const nextUpMember = sortedMembers.find(m => (m.onDutyStatus || 'on_duty') === 'on_duty');
@@ -57,7 +42,7 @@ export default function DriverRosterModal() {
   };
 
   const handleDutyChange = async (memberId, status) => {
-    if (!isDispatchView) return;
+    if (!isDispatchView && memberId !== currentUser?.id) return;
     setSavingId(memberId);
     try {
       await updateDoc(doc(db, `companies/${companyId}/members/${memberId}`), {
@@ -77,22 +62,19 @@ export default function DriverRosterModal() {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= sortedMembers.length) return;
 
-    const currentMember = sortedMembers[index];
-    const targetMember = sortedMembers[targetIndex];
+    const reordered = [...sortedMembers];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
 
     try {
-      const currentOrder = typeof currentMember.rosterOrder === 'number' ? currentMember.rosterOrder : index;
-      const targetOrder = typeof targetMember.rosterOrder === 'number' ? targetMember.rosterOrder : targetIndex;
-
-      // Swap orders
-      await updateDoc(doc(db, `companies/${companyId}/members/${currentMember.id}`), {
-        rosterOrder: targetOrder,
-        updatedAt: serverTimestamp()
+      const batch = writeBatch(db);
+      reordered.forEach((member, idx) => {
+        batch.update(doc(db, `companies/${companyId}/members/${member.id}`), {
+          rosterOrder: idx,
+          updatedAt: serverTimestamp()
+        });
       });
-      await updateDoc(doc(db, `companies/${companyId}/members/${targetMember.id}`), {
-        rosterOrder: currentOrder,
-        updatedAt: serverTimestamp()
-      });
+      await batch.commit();
       addToast("Roster order updated", "success");
     } catch (err) {
       console.error(err);
@@ -172,7 +154,7 @@ export default function DriverRosterModal() {
               
               // Live location & activity
               const activeLoc = activeDrivers.find(d => d.id === member.id);
-              const isOnline = activeLoc?.timestamp && activeLoc.timestamp.toMillis() > fiveMinAgo;
+              const isOnline = toMillisSafe(activeLoc?.timestamp) > fiveMinAgo;
               const assignedJob = jobs.find(j => j.status === 'in-progress' && j.assignedDrivers?.some(d => d.id === member.id));
 
               return (
@@ -258,7 +240,7 @@ export default function DriverRosterModal() {
                     {/* Duty Status Selector */}
                     <select
                       value={dutyStatus}
-                      disabled={!isDispatchView || savingId === member.id}
+                      disabled={(!isDispatchView && member.id !== currentUser?.id) || savingId === member.id}
                       onChange={(e) => handleDutyChange(member.id, e.target.value)}
                       className={`text-xs rounded-lg px-2 py-1.5 border font-semibold outline-none cursor-pointer ${
                         dutyStatus === 'on_duty'

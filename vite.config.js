@@ -4,6 +4,11 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/VECTO---route-tracker-main-app/',
+  base: './',
   plugins: [tailwindcss(), react()],
+  test: {
+    environment: 'jsdom',
+    globals: false,
+    include: ['src/__tests__/**/*.test.js'],
+  },
 })

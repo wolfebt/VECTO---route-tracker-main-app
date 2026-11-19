@@ -5,11 +5,12 @@ import {
   evaluateJobSlaSummary,
   evaluateStopSla,
   getRemainingStops,
+  haversineMeters,
   haversineMiles,
   normalizeJobStops,
-} from '../utils/stops';
-import { isVehicleServiceDue } from '../utils/vehicles';
-import { mergeActiveAndArchivedJobs } from '../utils/jobsMerge';
+} from '../src/utils/stops';
+import { isVehicleServiceDue } from '../src/utils/vehicles';
+import { mergeActiveAndArchivedJobs } from '../src/utils/jobsMerge';
 
 describe('stops, vehicles, and job merging', () => {
   beforeEach(() => {
@@ -21,11 +22,12 @@ describe('stops, vehicles, and job merging', () => {
     vi.useRealTimers();
   });
 
-  it('normalizes structured stops and legacy destinations while filtering completed stops', () => {
+  it('normalizes structured stops and legacy single/array destinations while filtering completed stops', () => {
     const structured = normalizeJobStops({
       stops: [
         { id: 'b', address: '200 Second St', order: 1, status: 'pending', arriveBy: '15:00', serviceMinutes: 20 },
         { id: 'a', address: '100 First St', order: 0, status: 'completed', arrivedAt: 1000, completedAt: 2000 },
+        { id: 'empty', address: '', order: 2 },
       ],
     });
     expect(structured.map((s) => s.id)).toEqual(['a', 'b']);
@@ -39,46 +41,74 @@ describe('stops, vehicles, and job merging', () => {
     });
     expect(legacy).toHaveLength(2);
     expect(legacy[0].status).toBe('pending');
+
+    const singleDestCompleted = normalizeJobStops({
+      status: 'completed',
+      destination: '  742 Evergreen Terrace  ',
+    });
+    expect(singleDestCompleted).toHaveLength(1);
+    expect(singleDestCompleted[0].address).toBe('742 Evergreen Terrace');
+    expect(singleDestCompleted[0].status).toBe('completed');
+    expect(getRemainingStops(singleDestCompleted)).toEqual([]);
   });
 
-  it('reorders intermediate waypoints while keeping the final stop last', () => {
+  it('reorders intermediate waypoints while keeping final stop last and preserving existing coords', () => {
     const stops = [
       { id: 's0', address: 'Stop A', order: 0, lat: null, lng: null },
-      { id: 's1', address: 'Stop B', order: 1, lat: null, lng: null },
+      { id: 's1', address: 'Stop B', order: 1, lat: 30.99, lng: -97.99 },
       { id: 's2', address: 'Final C', order: 2, lat: null, lng: null },
     ];
     const ordered = applyWaypointOrder(stops, [1, 0], [
       { end_location: { lat: () => 30.1, lng: () => -97.1 } },
-      { end_location: { lat: () => 30.2, lng: () => -97.2 } },
+      { end_location: { lat: 30.2, lng: -97.2 } },
       { end_location: { lat: () => 30.3, lng: () => -97.3 } },
     ]);
     expect(ordered.map((s) => s.id)).toEqual(['s1', 's0', 's2']);
-    expect(ordered[0].lat).toBe(30.1);
+    expect(ordered[0].lat).toBe(30.99);
+    expect(ordered[1].lat).toBe(30.2);
+    expect(ordered[2].lat).toBe(30.3);
     expect(ordered[2].order).toBe(2);
+    expect(applyWaypointOrder([], [], [])).toEqual([]);
   });
 
-  it('computes geodesic path distance cleanly', () => {
+  it('computes geodesic path distance in miles and meters cleanly', () => {
     const miles = haversineMiles({ lat: 30.2672, lng: -97.7431 }, { lat: 29.7604, lng: -95.3698 });
     expect(miles).toBeGreaterThan(140);
     expect(miles).toBeLessThan(155);
+    expect(haversineMeters({ lat: 30, lng: -97 }, { lat: 30, lng: -97 })).toBe(0);
+    expect(haversineMiles(null, { lat: 30, lng: -97 })).toBe(0);
     expect(computePathMiles([{ lat: 0, lng: 0 }])).toBe(0);
+    expect(computePathMiles([{ lat: 30.0, lng: -97.0 }, { lat: 30.1, lng: -97.0 }])).toBeGreaterThan(6);
   });
 
-  it('evaluates per-stop and job-level SLA statuses', () => {
+  it('evaluates per-stop and job-level SLA statuses including arrived grace window and invalid times', () => {
     const jobDate = '2026-11-18';
+    expect(evaluateStopSla({ status: 'pending', arriveBy: '' }, jobDate)).toEqual({ status: 'none', label: '' });
+    expect(evaluateStopSla({ status: 'pending', arriveBy: '25:99' }, jobDate)).toEqual({ status: 'none', label: '25:99' });
+    expect(evaluateStopSla({ status: 'pending', arriveBy: '09:05' }, jobDate).label).toBe('9:05 AM');
     expect(evaluateStopSla({ status: 'pending', arriveBy: '14:00' }, jobDate).status).toBe('at_risk');
     expect(evaluateStopSla({ status: 'pending', arriveBy: '13:30' }, jobDate).status).toBe('late');
     expect(evaluateStopSla({ status: 'pending', arriveBy: '16:30' }, jobDate).status).toBe('scheduled');
     expect(
       evaluateStopSla(
         {
-          status: 'completed',
+          status: 'arrived',
           arriveBy: '14:00',
-          arrivedAt: new Date(2026, 10, 18, 13, 50, 0).getTime(),
+          arrivedAt: new Date(2026, 10, 18, 14, 0, 45).getTime(),
         },
         jobDate
       ).status
     ).toBe('on_time');
+    expect(
+      evaluateStopSla(
+        {
+          status: 'completed',
+          arriveBy: '14:00',
+          arrivedAt: new Date(2026, 10, 18, 14, 2, 0).getTime(),
+        },
+        jobDate
+      ).status
+    ).toBe('late');
 
     const summary = evaluateJobSlaSummary({
       jobDate,
@@ -97,12 +127,15 @@ describe('stops, vehicles, and job merging', () => {
     });
   });
 
-  it('flags vehicles requiring preventive maintenance', () => {
+  it('flags vehicles requiring preventive maintenance across status, mileage, and date boundaries', () => {
     expect(isVehicleServiceDue(null)).toBe(false);
     expect(isVehicleServiceDue({ status: 'maintenance' })).toBe(true);
+    expect(isVehicleServiceDue({ status: 'active', odometerMiles: 50000, serviceDueMiles: 50000 })).toBe(true);
     expect(isVehicleServiceDue({ status: 'active', odometerMiles: 52000, serviceDueMiles: 50000 })).toBe(true);
     expect(isVehicleServiceDue({ status: 'active', odometerMiles: 48000, serviceDueMiles: 50000 })).toBe(false);
     expect(isVehicleServiceDue({ status: 'active', serviceDueDate: '2026-11-18' })).toBe(true);
+    expect(isVehicleServiceDue({ status: 'active', serviceDueDate: '2026-11-17' })).toBe(true);
+    expect(isVehicleServiceDue({ status: 'active', serviceDueDate: '2026-12-31' })).toBe(false);
   });
 
   it('merges live active jobs over stale archive entries cleanly', () => {
@@ -113,6 +146,7 @@ describe('stops, vehicles, and job merging', () => {
     const archived = [
       { id: 'job1', jobName: 'Stale Archive Copy', archived: true },
       { id: 'job3', jobName: 'Old Archive', archived: true },
+      { id: 'bad', jobName: 'Not Archived Flag', archived: false },
     ];
     const merged = mergeActiveAndArchivedJobs(active, archived);
     expect(merged).toHaveLength(3);

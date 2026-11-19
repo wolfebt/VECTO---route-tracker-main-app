@@ -14,7 +14,7 @@
       }
     },
     {
-      "files": ["src/__tests__/**/*.js", "vite.config.js"],
+      "files": ["TEST_SUITE/**/*.{js,jsx}", "vite.config.js"],
       "env": {
         "node": true
       }

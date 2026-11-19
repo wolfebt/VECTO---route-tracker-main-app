@@ -298,76 +298,113 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data;
     }
 
+    function hasDispatcherMemberPermission(companyId) {
+      let perms = getMemberData(companyId).get('permissions', {});
+      return perms is map && (
+        perms.get('canCreateJob', false) == true ||
+        perms.get('canManageDrivers', false) == true
+      );
+    }
+
     function isDispatcher(companyId) {
       return isCompanyCreator(companyId) || (
-        hasMemberDoc(companyId) &&
-        getMemberData(companyId).get('permissions', {}) is map && (
-          getMemberData(companyId).get('permissions', {}).get('canCreateJob', false) == true ||
-          getMemberData(companyId).get('permissions', {}).get('canManageDrivers', false) == true
-        )
+        hasMemberDoc(companyId) && hasDispatcherMemberPermission(companyId)
       );
+    }
+
+    function hasDeleteJobMemberPermission(companyId) {
+      let perms = getMemberData(companyId).get('permissions', {});
+      return perms is map && perms.get('canDeleteJob', false) == true;
     }
 
     function canDeleteJobs(companyId) {
       return isCompanyCreator(companyId) || (
-        hasMemberDoc(companyId) &&
-        getMemberData(companyId).get('permissions', {}) is map &&
-        getMemberData(companyId).get('permissions', {}).get('canDeleteJob', false) == true
+        hasMemberDoc(companyId) && hasDeleteJobMemberPermission(companyId)
       );
+    }
+
+    function isInRemovedList(docData, memberId) {
+      let removed = docData.get('removedMemberIds', []);
+      return removed is list && memberId in removed;
     }
 
     function isRemovedMember(companyId, memberId) {
       return (
         companyExists(companyId)
-        && getCompanyData(companyId).get('removedMemberIds', []) is list
-        && memberId in getCompanyData(companyId).get('removedMemberIds', [])
+        && isInRemovedList(getCompanyData(companyId), memberId)
       ) || (
         exists(/databases/$(database)/documents/companies/$(companyId)/private/security)
-        && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('removedMemberIds', []) is list
-        && memberId in get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('removedMemberIds', [])
+        && isInRemovedList(get(/databases/$(database)/documents/companies/$(companyId)/private/security).data, memberId)
       );
+    }
+
+    function hasNonEmptyString(val) {
+      return val is string && val != '';
+    }
+
+    function hasMatchingLegacyHash(compData, joinReq) {
+      let compHash = compData.get('passwordHash', '');
+      return hasNonEmptyString(compHash)
+        && joinReq.get('legacyProofHash', '') == compHash;
+    }
+
+    function hasValidLegacyJoinProof(companyId, joinReq) {
+      return companyExists(companyId)
+        && hasMatchingLegacyHash(getCompanyData(companyId), joinReq);
+    }
+
+    function hasValidJoinProofWithSecurityDoc(companyId, joinReq) {
+      let secHash = get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '');
+      return hasNonEmptyString(secHash)
+        ? joinReq.get('proofHash', '') == secHash
+        : hasValidLegacyJoinProof(companyId, joinReq);
+    }
+
+    function hasValidJoinProofWithReq(companyId, memberId) {
+      let joinReq = get(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId)).data;
+      let hasSec = exists(/databases/$(database)/documents/companies/$(companyId)/private/security);
+      return hasSec
+        ? hasValidJoinProofWithSecurityDoc(companyId, joinReq)
+        : hasValidLegacyJoinProof(companyId, joinReq);
     }
 
     function hasValidJoinProof(companyId, memberId) {
-      return exists(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId)) && (
-        (
-          exists(/databases/$(database)/documents/companies/$(companyId)/private/security)
-          && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') is string
-          && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') != ''
-          && get(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId)).data.get('proofHash', '') == get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '')
-        ) || (
-          (
-            !exists(/databases/$(database)/documents/companies/$(companyId)/private/security)
-            || !(
-              get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') is string
-              && get(/databases/$(database)/documents/companies/$(companyId)/private/security).data.get('passwordHash', '') != ''
-            )
-          )
-          && getCompanyData(companyId).get('passwordHash', '') is string
-          && getCompanyData(companyId).get('passwordHash', '') != ''
-          && get(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId)).data.get('legacyProofHash', '') == getCompanyData(companyId).get('passwordHash', '')
-        )
+      return exists(/databases/$(database)/documents/companies/$(companyId)/join_requests/$(memberId))
+        && hasValidJoinProofWithReq(companyId, memberId);
+    }
+
+    function isDriverEntryUid(entry, uid) {
+      return entry is map && entry.get('id', '') == uid;
+    }
+
+    function hasAssignedDriverInList(drivers, uid) {
+      let n = drivers.size();
+      return n > 0 && (
+        isDriverEntryUid(drivers[0], uid) ||
+        (n > 1 && isDriverEntryUid(drivers[1], uid)) ||
+        (n > 2 && isDriverEntryUid(drivers[2], uid)) ||
+        (n > 3 && isDriverEntryUid(drivers[3], uid)) ||
+        (n > 4 && isDriverEntryUid(drivers[4], uid)) ||
+        (n > 5 && isDriverEntryUid(drivers[5], uid)) ||
+        (n > 6 && isDriverEntryUid(drivers[6], uid)) ||
+        (n > 7 && isDriverEntryUid(drivers[7], uid)) ||
+        (n > 8 && isDriverEntryUid(drivers[8], uid)) ||
+        (n > 9 && isDriverEntryUid(drivers[9], uid))
       );
     }
 
+    function isAssignedDriverOnJobMap(jobData) {
+      let uid = request.auth.uid;
+      let ids = jobData.get('assignedDriverIds', []);
+      let drivers = jobData.get('assignedDrivers', []);
+      return (ids is list && uid in ids)
+        || (drivers is list && hasAssignedDriverInList(drivers, uid));
+    }
+
     function isAssignedDriverOnJob(jobData) {
-      return isAuthenticated() && jobData is map && (
-        ('assignedDriverIds' in jobData && jobData.assignedDriverIds is list && request.auth.uid in jobData.assignedDriverIds)
-        || (
-          jobData.get('assignedDrivers', []) is list && (
-            (jobData.get('assignedDrivers', []).size() > 0 && jobData.get('assignedDrivers', [])[0] is map && jobData.get('assignedDrivers', [])[0].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 1 && jobData.get('assignedDrivers', [])[1] is map && jobData.get('assignedDrivers', [])[1].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 2 && jobData.get('assignedDrivers', [])[2] is map && jobData.get('assignedDrivers', [])[2].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 3 && jobData.get('assignedDrivers', [])[3] is map && jobData.get('assignedDrivers', [])[3].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 4 && jobData.get('assignedDrivers', [])[4] is map && jobData.get('assignedDrivers', [])[4].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 5 && jobData.get('assignedDrivers', [])[5] is map && jobData.get('assignedDrivers', [])[5].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 6 && jobData.get('assignedDrivers', [])[6] is map && jobData.get('assignedDrivers', [])[6].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 7 && jobData.get('assignedDrivers', [])[7] is map && jobData.get('assignedDrivers', [])[7].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 8 && jobData.get('assignedDrivers', [])[8] is map && jobData.get('assignedDrivers', [])[8].get('id', '') == request.auth.uid) ||
-            (jobData.get('assignedDrivers', []).size() > 9 && jobData.get('assignedDrivers', [])[9] is map && jobData.get('assignedDrivers', [])[9].get('id', '') == request.auth.uid)
-          )
-        )
-      );
+      return isAuthenticated()
+        && jobData is map
+        && isAssignedDriverOnJobMap(jobData);
     }
 
     // ===============================================================
@@ -552,45 +589,45 @@ service cloud.firestore {
           'customer', 'client', 'notes', 'phone', 'customerPhone',
           'trackingToken', 'pod', 'vehicleId', 'vehicleLabel'
         ])
-        && isOptionalString(data, 'jobName', 200)
-        && isOptionalString(data, 'jobDate', 40)
-        && isOptionalString(data, 'origin', 500)
-        && isOptionalList(data, 'destinations', 50)
-        && isOptionalString(data, 'destination', 500)
-        && isOptionalBool(data, 'optimizeRoute')
-        && isOptionalString(data, 'contactName', 120)
-        && isOptionalString(data, 'contactNumber', 40)
+        && (!('jobName' in data) || (data.jobName is string && data.jobName.size() <= 200))
+        && (!('jobDate' in data) || (data.jobDate is string && data.jobDate.size() <= 40))
+        && (!('origin' in data) || (data.origin is string && data.origin.size() <= 500))
+        && (!('destinations' in data) || (data.destinations is list && data.destinations.size() <= 50))
+        && (!('destination' in data) || (data.destination is string && data.destination.size() <= 500))
+        && (!('optimizeRoute' in data) || data.optimizeRoute is bool)
+        && (!('contactName' in data) || (data.contactName is string && data.contactName.size() <= 120))
+        && (!('contactNumber' in data) || (data.contactNumber is string && data.contactNumber.size() <= 40))
         && (!('driversNeeded' in data) || (data.driversNeeded is number && data.driversNeeded >= 0 && data.driversNeeded <= 100))
-        && isOptionalList(data, 'instructions', 100)
-        && isOptionalString(data, 'note', 5000)
-        && isOptionalList(data, 'assignedDrivers', 100)
-        && isOptionalList(data, 'assignedDriverIds', 100)
-        && isOptionalList(data, 'completedDrivers', 100)
-        && isOptionalList(data, 'stops', 100)
-        && isOptionalList(data, 'waypoint_order', 100)
-        && isOptionalList(data, 'waypointOrder', 100)
+        && (!('instructions' in data) || (data.instructions is list && data.instructions.size() <= 100))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 5000))
+        && (!('assignedDrivers' in data) || (data.assignedDrivers is list && data.assignedDrivers.size() <= 100))
+        && (!('assignedDriverIds' in data) || (data.assignedDriverIds is list && data.assignedDriverIds.size() <= 100))
+        && (!('completedDrivers' in data) || (data.completedDrivers is list && data.completedDrivers.size() <= 100))
+        && (!('stops' in data) || (data.stops is list && data.stops.size() <= 100))
+        && (!('waypoint_order' in data) || (data.waypoint_order is list && data.waypoint_order.size() <= 100))
+        && (!('waypointOrder' in data) || (data.waypointOrder is list && data.waypointOrder.size() <= 100))
         && 'status' in data && data.status is string && data.status.size() >= 1 && data.status.size() <= 40
-        && isOptionalString(data, 'previousStatus', 40)
-        && isOptionalBool(data, 'archived')
-        && isOptionalString(data, 'routeColor', 32)
-        && isOptionalString(data, 'createdBy', 128)
-        && isOptionalTimestamp(data, 'createdAt')
-        && isOptionalTimestamp(data, 'startedAt')
-        && isOptionalTimestamp(data, 'completedAt')
-        && isOptionalTimestamp(data, 'updatedAt')
-        && isOptionalTimestamp(data, 'lastMessageTimestamp')
-        && isOptionalString(data, 'title', 200)
-        && isOptionalString(data, 'name', 200)
-        && isOptionalString(data, 'address', 500)
-        && isOptionalString(data, 'customer', 120)
-        && isOptionalString(data, 'client', 120)
-        && isOptionalString(data, 'notes', 5000)
-        && isOptionalString(data, 'phone', 40)
-        && isOptionalString(data, 'customerPhone', 40)
-        && isOptionalNullableString(data, 'trackingToken', 128)
+        && (!('previousStatus' in data) || (data.previousStatus is string && data.previousStatus.size() <= 40))
+        && (!('archived' in data) || data.archived is bool)
+        && (!('routeColor' in data) || (data.routeColor is string && data.routeColor.size() <= 32))
+        && (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 128))
+        && (!('createdAt' in data) || data.createdAt == null || data.createdAt is timestamp)
+        && (!('startedAt' in data) || data.startedAt == null || data.startedAt is timestamp)
+        && (!('completedAt' in data) || data.completedAt == null || data.completedAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp)
+        && (!('lastMessageTimestamp' in data) || data.lastMessageTimestamp == null || data.lastMessageTimestamp is timestamp)
+        && (!('title' in data) || (data.title is string && data.title.size() <= 200))
+        && (!('name' in data) || (data.name is string && data.name.size() <= 200))
+        && (!('address' in data) || (data.address is string && data.address.size() <= 500))
+        && (!('customer' in data) || (data.customer is string && data.customer.size() <= 120))
+        && (!('client' in data) || (data.client is string && data.client.size() <= 120))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 5000))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
+        && (!('customerPhone' in data) || (data.customerPhone is string && data.customerPhone.size() <= 40))
+        && (!('trackingToken' in data) || data.trackingToken == null || (data.trackingToken is string && data.trackingToken.size() <= 128))
         && (!('pod' in data) || data.pod == null || (data.pod is map && data.pod.keys().size() <= 15))
-        && isOptionalNullableString(data, 'vehicleId', 128)
-        && isOptionalNullableString(data, 'vehicleLabel', 120);
+        && (!('vehicleId' in data) || data.vehicleId == null || (data.vehicleId is string && data.vehicleId.size() <= 128))
+        && (!('vehicleLabel' in data) || data.vehicleLabel == null || (data.vehicleLabel is string && data.vehicleLabel.size() <= 120));
     }
 
     function isValidChatMessage(data) {
@@ -774,6 +811,61 @@ service cloud.firestore {
     }
 
     // ===============================================================
+    // Job Update Policy Helpers (Single-Pass Evaluation via `let`)
+    // ===============================================================
+
+    function canSelfAssignJob(diffKeys) {
+      let oldDrivers = resource.data.get('assignedDrivers', []);
+      let newDrivers = request.resource.data.get('assignedDrivers', []);
+      return request.resource.data.status in ['assigned', 'in-progress']
+        && !(resource.data.status in ['completed', 'cancelled', 'archived'])
+        && diffKeys.hasOnly([
+          'assignedDrivers', 'assignedDriverIds', 'status', 'startedAt', 'updatedAt',
+          'vehicleId', 'vehicleLabel'
+        ])
+        && newDrivers is list
+        && oldDrivers is list
+        && newDrivers.size() == oldDrivers.size() + 1
+        && newDrivers.hasAll(oldDrivers)
+        && isAssignedDriverOnJob(request.resource.data);
+    }
+
+    function canAssignedOrSelfAssignJob(diffKeys) {
+      let wasAssigned = isAssignedDriverOnJob(resource.data);
+      return wasAssigned || canSelfAssignJob(diffKeys);
+    }
+
+    function canMemberUpdateJob() {
+      let diffKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return diffKeys.hasOnly([
+        'lastMessageTimestamp', 'updatedAt'
+      ]) || (
+        !(request.resource.data.status in ['cancelled', 'archived'])
+        && diffKeys.hasOnly([
+          'assignedDrivers', 'assignedDriverIds', 'completedDrivers', 'status',
+          'startedAt', 'completedAt', 'updatedAt',
+          'lastMessageTimestamp', 'stops', 'trackingToken', 'pod',
+          'vehicleId', 'vehicleLabel'
+        ])
+        && canAssignedOrSelfAssignJob(diffKeys)
+      );
+    }
+
+    function canUpdateJob(companyId) {
+      return isValidJob(request.resource.data)
+        && (!('createdBy' in resource.data) || request.resource.data.createdBy == resource.data.createdBy)
+        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+        && (
+          isCompanyCreator(companyId) || (
+            hasMemberDoc(companyId) && (
+              hasDispatcherMemberPermission(companyId)
+              || canMemberUpdateJob()
+            )
+          )
+        );
+    }
+
+    // ===============================================================
     // Users Collection (Strict Owner-Only PII Separation)
     // ===============================================================
 
@@ -884,42 +976,7 @@ service cloud.firestore {
           && 'jobName' in request.resource.data && request.resource.data.jobName.size() >= 1
           && 'origin' in request.resource.data && request.resource.data.origin.size() >= 1
           && request.resource.data.get('createdBy', request.auth.uid) == request.auth.uid;
-        allow update: if isValidJob(request.resource.data)
-          && (!('createdBy' in resource.data) || request.resource.data.createdBy == resource.data.createdBy)
-          && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
-          && (
-            isDispatcher(companyId) || (
-              isCompanyMember(companyId) && (
-                (
-                  isAssignedDriverOnJob(resource.data) &&
-                  request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                    'assignedDrivers', 'assignedDriverIds', 'completedDrivers', 'status',
-                    'startedAt', 'completedAt', 'updatedAt',
-                    'lastMessageTimestamp', 'stops', 'trackingToken', 'pod',
-                    'vehicleId', 'vehicleLabel'
-                  ]) &&
-                  !(request.resource.data.status in ['cancelled', 'archived'])
-                ) || (
-                  !isAssignedDriverOnJob(resource.data) &&
-                  !(resource.data.status in ['completed', 'cancelled', 'archived']) &&
-                  isAssignedDriverOnJob(request.resource.data) &&
-                  request.resource.data.get('assignedDrivers', []) is list &&
-                  resource.data.get('assignedDrivers', []) is list &&
-                  request.resource.data.get('assignedDrivers', []).size() == resource.data.get('assignedDrivers', []).size() + 1 &&
-                  request.resource.data.get('assignedDrivers', []).hasAll(resource.data.get('assignedDrivers', [])) &&
-                  request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                    'assignedDrivers', 'assignedDriverIds', 'status', 'startedAt', 'updatedAt',
-                    'vehicleId', 'vehicleLabel'
-                  ]) &&
-                  request.resource.data.status in ['assigned', 'in-progress']
-                ) || (
-                  request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                    'lastMessageTimestamp', 'updatedAt'
-                  ])
-                )
-              )
-            )
-          );
+        allow update: if canUpdateJob(companyId);
         allow delete: if canDeleteJobs(companyId);
 
         // Job Chat Subcollection

@@ -396,8 +396,10 @@ export default function CreateJobModal() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-300 uppercase mb-1">Origin Address *</label>
+              <label htmlFor="job-origin-input" className="block text-sm font-bold text-gray-300 uppercase mb-1">Origin Address *</label>
               <PlacesAutocompleteInput 
+                 id="job-origin-input"
+                 aria-label="Origin Address"
                  value={origin} 
                  onChange={(val) => {
                    setOrigin(val);
@@ -406,9 +408,7 @@ export default function CreateJobModal() {
                  }} 
                  onSelectPlace={({ address, lat, lng }) => {
                    setOrigin(address);
-                   if (typeof lat === 'number' && typeof lng === 'number') {
-                     setOriginCoords({ lat, lng });
-                   }
+                   setOriginCoords(typeof lat === 'number' && typeof lng === 'number' ? { lat, lng } : null);
                    setMatrixOverrides({});
                  }}
                  placeholder="Start Address" 
@@ -443,16 +443,32 @@ export default function CreateJobModal() {
                     <div key={stop.id || i} className="bg-gray-700/35 p-2 rounded-lg border border-gray-700/80 space-y-1.5">
                       <div className="flex space-x-2 relative">
                         <PlacesAutocompleteInput 
+                           aria-label={`Stop ${i + 1} Address`}
                            value={stop.address} 
                            onChange={(val) => {
-                               const next = [...stopsState];
-                               next[i] = { ...next[i], address: val, lat: null, lng: null };
-                               setStopsState(next);
+                               const stopKey = stop.id;
+                               setStopsState((prev) =>
+                                 prev.map((item, idx) =>
+                                   (stopKey ? item.id === stopKey : idx === i)
+                                     ? { ...item, address: val, lat: null, lng: null }
+                                     : item
+                                 )
+                               );
                            }}
                            onSelectPlace={({ address, lat, lng }) => {
-                               const next = [...stopsState];
-                               next[i] = { ...next[i], address, lat, lng };
-                               setStopsState(next);
+                               const stopKey = stop.id;
+                               setStopsState((prev) =>
+                                 prev.map((item, idx) =>
+                                   (stopKey ? item.id === stopKey : idx === i)
+                                     ? {
+                                         ...item,
+                                         address,
+                                         lat: typeof lat === 'number' ? lat : null,
+                                         lng: typeof lng === 'number' ? lng : null,
+                                       }
+                                     : item
+                                 )
+                               );
                            }}
                            placeholder={`Stop ${i + 1} Address`} 
                            className="w-full bg-gray-700 text-white rounded p-2 text-sm border border-gray-600 focus:border-blue-500" 

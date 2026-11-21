@@ -38,6 +38,8 @@ const FleetAnalyticsModal = React.lazy(() => import('./components/modals/FleetAn
 import { Settings, Map, List, FileText, LayoutDashboard } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 
+const GOOGLE_MAPS_LIBRARIES = ['places'];
+
 function AuthenticatedApp() {
   const { isAuthReady, mobileView, setMobileView, showSplash, fadeSplash, setShowSplash, setFadeSplash, mainView, setMainView } = useAppStore();
   const currentUser = useAppStore(state => state.currentUser);
@@ -166,7 +168,10 @@ function AuthenticatedApp() {
   }
 
   return (
-    <APIProvider apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
+    <APIProvider
+      apiKey={mapsApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}
+      libraries={GOOGLE_MAPS_LIBRARIES}
+    >
       {splashScreen}
       <div 
         onTouchStart={handleTouchStart}
